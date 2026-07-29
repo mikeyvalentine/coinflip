@@ -34,6 +34,7 @@ import {
 import { throwProfile, clipLaunchSpeed, clamp01, LEADIN } from '../flip3d/power.js';
 import { analyzeClip, clipTimeScale } from '../flip3d/clip.js';
 import { loadClipLibrary } from '../flip3d/library.js';
+import { LIFT } from '../flip3d/scene.js';
 import { upDot, expectedSide, COIN_HALF_THICKNESS_M } from '../flip3d/contract.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -152,7 +153,14 @@ function bridgePoseAt(b, t) {
 // launch speed over the distance available — there the requirement is only that
 // the renderer stays continuous and bounded, and the real fix is a clamp on the
 // gesture (see the report and minBridgeMetres).
-const MATCHED_HEIGHTS = [COIN_HALF_THICKNESS_M, 0.02, 0.05, 0.10, 0.15, 0.19];
+// REACHABLE release heights only. The lift ceiling is scene.js#LIFT.maxY, so a
+// player physically cannot let go above it — and above it the bridge collapses
+// toward zero, the lead-in floor binds, and the match becomes impossible for
+// reasons no gesture can create. Sweeping heights the game cannot produce and
+// then relaxing the bound to accommodate them hides a real jolt in the range
+// that IS reachable, which is precisely what happened: the band sat at 0.75
+// because unreachable heights dragged it down.
+const MATCHED_HEIGHTS = [0.001, 0.01, 0.03, 0.06, 0.09, 0.12, LIFT.maxY];
 const DEGENERATE_HEIGHTS = [0.215, 0.22, 0.24, 0.26];
 const HEIGHTS = [...MATCHED_HEIGHTS, ...DEGENERATE_HEIGHTS];
 const IDENTITY_QUAT = [0, 0, 0, 1];
@@ -356,7 +364,11 @@ console.log('\n=== (4) THE VELOCITY MATCH, measured off the profile ===');
   // top of that to ~1.35x. Anything outside 0.75..1.45 means the bridge has
   // stopped matching, which is exactly what power.js's 70 ms floor produces on
   // a short bridge — measured as the counterfactual below.
-  ok(lo >= 0.75, 'the coin arrives too slowly — the clip snatches it', { lo: f3(lo) });
+  // The band was [0.70, 1.30]: the old model deliberately handed the clip a
+  // different speed than it launches at, so a wide tolerance was the point.
+  // That bought a visible jolt at the seam — 25% at power 0 — and the handoff
+  // is now EXACT. So this is no longer a tolerance, it is a continuity check.
+  ok(lo > 0.97 && hi < 1.03, 'the handoff is not continuous — the clip snatches the coin', { lo, hi });
   ok(hi <= 1.45, 'the coin out-runs the clip at the handoff', { hi: f3(hi) });
   console.log(`  matched regime, every clip x height: ${f3(lo)} .. ${f3(hi)} `
     + '(intended band 0.80..1.30, plus anticipation overshoot)');
@@ -381,7 +393,13 @@ console.log('\n=== (4) THE VELOCITY MATCH, measured off the profile ===');
   const naiveLo = Math.min(...naive);
   console.log(`  for contrast, with power.js's ${LEADIN.msMin} ms floor left in place: `
     + `${f3(naiveLo)} .. ${f3(Math.max(...naive))}`);
-  ok(naiveLo < lo, 'the re-derivation no longer improves on the naive clamp', {
+  // Compare DISTANCE FROM 1, not raw values. The point was never "the bridge
+  // arrives slower than the naive path" — it is "the bridge arrives at the
+  // clip's own speed and the naive path does not". Now that the naive path
+  // overshoots (1.146) rather than undershooting, a raw `<` comparison marks
+  // the better answer as the worse one.
+  ok(Math.abs(lo - 1) < Math.abs(naiveLo - 1),
+    'the re-derivation no longer improves on the naive clamp', {
     naiveLo: f3(naiveLo), lo: f3(lo),
   });
 }

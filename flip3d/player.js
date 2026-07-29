@@ -65,10 +65,17 @@ export const LEADIN_BRIDGE = {
    * whatever yaw the bake launched from — up to 180 deg apart. Turning that
    * inside one frame is a snap, so the bridge is allowed to run long enough to
    * cover it. 2000 deg/s is brisk in isolation and negligible against the flip
+   * RAISED 2000 -> 4500 because the stretch was the biggest remaining jolt at
+   * the seam. Padding the bridge to cover the turn divides the arrival speed by
+   * the same factor, so a 180 deg reconciliation at 2000 deg/s made the coin
+   * arrive ~29% slow and the clip visibly snatched it — worst on a gentle throw,
+   * which is when the player is watching for a gentle result. 4500 deg/s is
+   * still far below the flip it precedes and the turn is pre-flight, so nothing
+   * is being rushed that anyone can read.
    * it precedes: the coin tumbles at 42-209 rad/s, i.e. 2400-12000 deg/s, from
    * the very next frame.
    */
-  maxTurnDegPerSec: 2000,
+  maxTurnDegPerSec: 4500,
   /**
    * How far the turn is allowed to stretch the bridge beyond the velocity
    * match, as a multiple of it.

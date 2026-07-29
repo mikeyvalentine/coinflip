@@ -165,11 +165,13 @@ export function createCharge(el, hooks = {}) {
  * @param {HTMLElement} host element to build inside
  */
 export function createMeterView(host) {
-  host.innerHTML = `
-    <div class="pm-track"><div class="pm-fill"></div><div class="pm-min"></div></div>
-    <div class="pm-label">hold &amp; drag down</div>`;
+  // NO TEXT. The meter carried a tier name and a percentage, which is two
+  // readouts for a control whose whole state is already visible as a height.
+  // A bar that fills IS the reading; naming it as well invites the player to aim
+  // at a word instead of feeling the throw. The tier colours stay — colour is
+  // part of the bar, not a caption.
+  host.innerHTML = '<div class="pm-track"><div class="pm-fill"></div><div class="pm-min"></div></div>';
   const fill = host.querySelector('.pm-fill');
-  const label = host.querySelector('.pm-label');
   const min = host.querySelector('.pm-min');
   min.style.bottom = (MIN_POWER * 100) + '%';
 
@@ -200,15 +202,14 @@ export function createMeterView(host) {
       const t = tierFor(shown);
       fill.style.height = (shown * 100).toFixed(2) + '%';
       fill.style.background = t[2];
-      label.innerHTML = shown > 0 ? `${t[1]} · ${(shown * 100).toFixed(0)}%` : t[1];
-      label.style.color = t[2];
       host.dataset.power = shown.toFixed(4);
       host.dataset.tier = t[1];
       host.dataset.armed = shown >= MIN_POWER ? '1' : '0';
     },
     flash(text, colour = '#6b7280') {
-      label.innerHTML = text;
-      label.style.color = colour;
+      // No label to write to any more. Kept as a no-op so the cancel paths in
+      // coinflip-3d.html keep working and the dataset still records the reason —
+      // a flash the player cannot see is better than a call that throws.
       host.dataset.tier = text;
     },
     reset() { this.set(0); },

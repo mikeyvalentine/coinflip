@@ -175,8 +175,17 @@ console.log('\n=== (5) power -> the visible character of the throw ===');
   });
   console.table(rows);
   for (let i = 1; i < rows.length; i++) {
-    ok(rows[i].leadInMs < rows[i - 1].leadInMs, 'lead-in did not shorten with power', rows[i]);
-    ok(rows[i].exitSpeed > rows[i - 1].exitSpeed, 'lead-in exit speed did not rise with power', rows[i]);
+    // THE HANDOFF IS NOW EXACT AT EVERY POWER, deliberately. Power used to vary
+    // the lead-in by handing the clip a different speed than the clip launches
+    // at — 0.80x at power 0, 1.30x at power 1 — which bought a visible jolt at
+    // the seam, WORST for the gentlest throw, which is exactly when the player
+    // is watching for a gentle result. So the lead-in no longer shortens with
+    // power and the exit speed no longer rises: both are pinned to the clip.
+    // What still grows with power is the wind-up HOLD, which cannot contradict
+    // the physics because it happens before the coin moves.
+    ok(Math.abs(rows[i].exitSpeed - 2.6) < 1e-9,
+      'the coin does not hand over at exactly the clip speed', rows[i]);
+    ok(rows[i].antic >= rows[i - 1].antic, 'the wind-up hold did not grow with power', rows[i]);
     ok(rows[i].airborneSec > rows[i - 1].airborneSec, 'airborne time did not rise with power', rows[i]);
     ok(rows[i].apexM > rows[i - 1].apexM, 'procedural apex did not rise with power', rows[i]);
     ok(rows[i].camPulloutMs < rows[i - 1].camPulloutMs, 'camera pullout did not quicken', rows[i]);
@@ -402,7 +411,9 @@ console.log('\n=== (8) power -> variant, measured through the real library ===')
   ok(cellEscapes === 0, 'a variant left its cell', { cellEscapes });
   for (let i = 1; i < rows.length; i++) {
     ok(rows[i].meanEnergy >= rows[i - 1].meanEnergy, 'mean variant energy fell as power rose', rows[i]);
-    ok(rows[i].leadInMs < rows[i - 1].leadInMs, 'mean lead-in did not shorten as power rose', rows[i]);
+    // Same restatement as the sweep above: the lead-in is pinned to whatever the
+    // bridge asks for, because the handoff speed is now the clip's exactly. It
+    // does not move with power and must not.
     // The one physical quantity `energy` actually orders WITHIN a cell. See the
     // note below: it is also, by design doc §2, the one that carries no bet.
     ok(rows[i].travelCm > rows[i - 1].travelCm, 'table travel did not grow with power', rows[i]);

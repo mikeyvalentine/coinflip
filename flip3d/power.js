@@ -47,9 +47,35 @@ export const CHARGE_TRAVEL_PX = 190;
 // feather exits ~0.80x (long, floaty one). The bake's launch range is
 // vy 2.05..3.30 m/s, so the reachable lead-in is roughly 100..270 ms.
 export const LEADIN = {
-  exitScaleMin: 0.80,   // power 0: slower than the clip's own launch -> a lob
-  exitScaleMax: 1.30,   // power 1: faster -> a whip
-  msMin: 70,
+  // BOTH 1.0, DELIBERATELY. These were 0.80 and 1.30 so that power varied the
+  // lead-in's length by varying the speed it handed over at. That bought a
+  // VISIBLE JOLT: the clip always takes over at its own baked launch speed, so
+  // arriving at 0.80x meant the coin instantaneously sped up 25% at the seam —
+  // and it was WORST for the gentlest throw, which is exactly when the player is
+  // watching for a gentle result. Measured across the library: +25% at power 0,
+  // -23% at power 1.
+  //
+  // It also stopped buying anything. Raising the lift ceiling to 0.150 m for the
+  // throwing room left only a 70 mm bridge, so 2h/v clamps to msMin at EVERY
+  // power and the lead-in is a flat 70 ms regardless. The scaling was paying a
+  // jolt for a variation that no longer existed.
+  //
+  // Matching exactly means the handoff is continuous: the coin is moving at the
+  // clip's speed on the frame the clip takes over. Power now expresses itself
+  // through the anticipation hold, the camera and the variant — none of which
+  // can contradict the physics.
+  exitScaleMin: 1.0,
+  exitScaleMax: 1.0,
+  // 70 was safe when the coin was picked up from near the table and the bridge
+  // was ~190 mm. The lift ceiling is now 0.150 m, so the bridge is 70 mm and the
+  // ideal lead-in is 53 ms — the FLOOR BOUND, forcing the coin to cover a short
+  // gap in MORE time and therefore arrive 25% SLOW. That is a second, entirely
+  // independent cause of the same jolt the exit scaling caused: whichever one
+  // you fix alone, the coin still gets snatched by the clip.
+  //
+  // A floor still belongs here — a 5 ms lead-in is a teleport, not a throw — but
+  // it must sit below what a real bridge asks for, not above it.
+  msMin: 30,
   msMax: 280,
   fallbackMs: 110,      // clip launch speed unreadable: the old constant
   /** Fraction of the lead-in spent winding up before the coin moves. */
@@ -103,7 +129,16 @@ export function throwProfile(power, ctx = {}) {
   let exitSpeed = null;
   if (Number.isFinite(h) && h > 0 && Number.isFinite(v) && v > 0.05) {
     exitSpeed = v * lerp(LEADIN.exitScaleMin, LEADIN.exitScaleMax, p);
-    leadInMs = clamp((2 * h / exitSpeed) * 1000, LEADIN.msMin, LEADIN.msMax);
+    // DIVIDE BY THE MOVING SPAN, not the whole lead-in. `2h/v` solves for a coin
+    // that accelerates across the ENTIRE duration, but player.js spends
+    // leadInAnticipation of it winding up with the coin stationary — so the
+    // actual moving span is (1-antic) of the lead-in and the coin arrives at
+    // v/(1-antic), up to 14.6% fast. Pre-existing, flagged when fromPose landed,
+    // and it survived because the exit scaling was ALSO wrong in the other
+    // direction and the two partly cancelled. With the scaling pinned to 1.0 it
+    // is the only remaining error at the seam, so it is now the whole jolt.
+    const antic = LEADIN.anticipationMax * p * p;
+    leadInMs = clamp((2 * h / exitSpeed) * 1000 / (1 - antic), LEADIN.msMin, LEADIN.msMax);
   }
 
   return {
