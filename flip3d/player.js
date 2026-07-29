@@ -179,6 +179,18 @@ export const DRAMA_CAM = {
 // the coin visibly sped up at the exact moment it should have hit hardest.
 export const SLOWMO = {
   startFrac: 0,        // where in apex->touchdown the ramp opens. 0 = at the apex
+  // OPEN BEFORE THE APEX. Opening exactly at the top meant the slow-down and
+  // the push-in both began on the frame the coin stopped rising, which reads as
+  // reacting to the apex rather than anticipating it. This lifts the opening
+  // back down the rise by a fraction of the ASCENT, so the camera is already
+  // moving and time is already thickening as the coin arrives at the top.
+  preApexFrac: 0.22,
+  // HOW HARD THE SLOW-DOWN BITES AT THE START. smoothstep eases in gently, so
+  // the first third of the descent was still nearly real time and the drama all
+  // arrived late. This is 1-(1-t)^shape: rate falls fast out of the apex and
+  // then approaches minRate gradually. The END of the ramp was already right,
+  // so the curve had to change without moving its endpoints.
+  shape: 1.8,
   // 0.26 (~4x) was too timid — the descent is the shot, and at 4x it still went
   // past before you could read the coin. 0.10 is a 10x crawl into the landing.
   // The ASCENT is still untouched at 1x, which is the only reason this does not
@@ -245,7 +257,10 @@ export function makeClipWarp(clip, analysis, cfg) {
   // A clip whose apex IS its touchdown (or that never rose) still has to ramp
   // somewhere, so fall back to a fixed run-up rather than dividing by zero.
   const apex = Math.min(analysis.apexMs ?? 0, td);
-  const from = td > apex ? apex + (td - apex) * clamp(c.startFrac, 0, 1)
+  // The ramp opens BEFORE the apex — preApexFrac of the rise back down it — so
+  // the move is already under way when the coin reaches the top.
+  const preApex = Math.max(0, apex * clamp(c.preApexFrac ?? 0, 0, 1));
+  const from = td > apex ? Math.max(0, apex - preApex + (td - apex) * clamp(c.startFrac, 0, 1))
     : Math.max(0, td - 240);
   // The impact beat and the recovery are FRACTIONS OF THE CLIP'S OWN SETTLE, not
   // fixed millisecond counts, so every clip is back at real time by its final
@@ -258,7 +273,8 @@ export function makeClipWarp(clip, analysis, cfg) {
   const rate = (ct) => {
     if (ct <= from) return 1;                                   // the rise: untouched
     if (ct < td) {                                              // the fall: decelerating
-      return 1 + (c.minRate - 1) * smoothstep((ct - from) / Math.max(td - from, 1e-6));
+      const t = clamp((ct - from) / Math.max(td - from, 1e-6), 0, 1);
+      return 1 + (c.minRate - 1) * (1 - Math.pow(1 - t, c.shape ?? 2));
     }
     const after = ct - td;
     if (after <= hold) return c.minRate;                        // the landing: held
@@ -512,7 +528,12 @@ export function createFlipper(sceneApi, hooks = {}) {
     // warp these differ by hundreds of ms, and the crane must fire on what the
     // player is watching, not on what the physics clock says.
     const tdWall = leadIn + warp.wallAt(analysis.touchdownMs);
-    const apexClipMs = Math.min(analysis.apexMs ?? 0, analysis.touchdownMs);
+    // The push-in opens where the SLOW-DOWN opens — before the apex — because
+    // the zoom and the time ramp are meant to read as one gesture, not two
+    // effects that happen to overlap. Recomputed here from the same rule rather
+    // than read off the warp, so the no-slowmo path still has a sane window.
+    const apexRaw = Math.min(analysis.apexMs ?? 0, analysis.touchdownMs);
+    const apexClipMs = Math.max(0, apexRaw - apexRaw * (SLOWMO.preApexFrac ?? 0));
     const dramaSpan = Math.max(analysis.touchdownMs - apexClipMs, 1e-6);
     onSpin(0, 0);
     onPhase(leadIn > 0 ? 'launch' : 'flight');

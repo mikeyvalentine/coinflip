@@ -522,8 +522,13 @@ console.log('\n=== (6) the flip stays a sane length at every release height ==='
   // Same ceiling tools/verify-slowmo.mjs holds the ramped flip to. A shorter
   // bridge can only make the flip shorter, so this is really guarding against a
   // bridge that runs away — e.g. the turn floor pinning every throw at msMax.
-  ok(worst <= 2800, 'a release height blows the flip-length ceiling', { worstMs: worst });
-  console.log(`  longest flip across all release heights: ${f1(worst)} ms (ceiling 2800)`);
+  // Moved with the pacing, 2026-07-29, on direction: the slow-mo now opens
+  // before the apex and bites harder out of it. This file carries its own copy
+  // of the bound rather than importing it, so it has to move too — and a stale
+  // duplicate that fails for the right reason is still a suite people learn to
+  // ignore. Matches tools/verify-slowmo.mjs §4.
+  ok(worst <= 5000, 'a release height blows the flip-length ceiling', { worstMs: worst });
+  console.log(`  longest flip across all release heights: ${f1(worst)} ms (ceiling 5000)`);
 }
 
 // ===========================================================================

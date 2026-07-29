@@ -111,22 +111,39 @@ console.log('\n=== (2) THE ANTI-FLOATY GUARANTEE: the ascent runs at exactly 1x 
     const a = analyzeClip(clip);
     const w = makeClipWarp(clip, a, true);
     const apex = Math.min(a.apexMs, a.touchdownMs);
-    // sample the whole rise, right up to the apex
+    // THE RAMP NOW OPENS BEFORE THE APEX, by design and on direction: the zoom
+    // and the slow-down should be under way as the coin ARRIVES at the top,
+    // not begin on the frame it stops rising. So the guarantee is no longer
+    // "the whole rise is 1x" — it is "the rise is 1x until the ramp opens, and
+    // the ramp opens late enough that the bulk of the climb is untouched".
+    // That is what actually protects against the floaty failure mode: a coin
+    // that CLIMBS slowly reads as low gravity, and it still climbs at exactly
+    // real time for the first three quarters of the way up.
+    const from = apex * (1 - SLOWMO.preApexFrac);
+    ok(SLOWMO.preApexFrac <= 0.30,
+      'the ramp opens too early — most of the CLIMB must stay at real time',
+      { preApexFrac: SLOWMO.preApexFrac });
     for (let i = 0; i <= 60; i++) {
-      const ct = apex * i / 60;
+      const ct = from * i / 60;
       const r = w.rateAt(ct);
       worstPreApexRate = Math.min(worstPreApexRate, r);
-      if (r !== 1) { bad++; break; }
+      // Not `r !== 1`. The last sample is `from * 60/60`, which in floating
+      // point is not exactly `from`, so it lands a hair inside the ramp and
+      // reads 0.9999999999999998. That is arithmetic at a boundary, not a
+      // slowed climb — and a test that cannot tell the two apart would have to
+      // be silenced rather than fixed the first time anyone touched the curve.
+      if (r < 1 - 1e-9) { bad++; break; }
     }
     // and the wall clock must agree: the rise takes as long as it really does.
     // Tolerance is one display frame, not zero: wallAt reads a 512-sample
     // integration table, so the one cell that straddles the ramp's opening
     // carries interpolation error. Measured below — it is microseconds.
-    worstAscentDriftMs = Math.max(worstAscentDriftMs, Math.abs(w.wallAt(apex) - apex));
+    worstAscentDriftMs = Math.max(worstAscentDriftMs, Math.abs(w.wallAt(from) - from));
   }
   ok(bad === 0, 'the ascent was slowed — this is the floaty failure mode', { bad, worstPreApexRate });
   ok(worstAscentDriftMs < 16.7, 'the ascent drifted by a visible amount', { worstAscentDriftMs });
-  console.log(`  ${clips.length} clips: rate is exactly 1.000 from launch to apex`);
+  console.log(`  ${clips.length} clips: rate is exactly 1.000 from launch until the ramp opens,`);
+  console.log(`  which is ${(100*(1-SLOWMO.preApexFrac)).toFixed(0)}% of the way up the climb`);
   console.log(`  worst ascent wall-vs-clip drift: ${worstAscentDriftMs.toExponential(2)} ms `
     + '(tolerance: one 60 Hz frame)');
 }
@@ -227,8 +244,8 @@ console.log('\n=== (4) what the ramp actually buys, measured ===');
   // 4x descent was still too fast to read. They are still REAL bounds — a flip
   // is a daily ritual, not a cutscene — just set around the intended pacing
   // rather than around my guess at it.
-  ok(worst <= 4200, 'the ramped flip is too long to sit through', { worstMs: f1(worst) });
-  ok(median <= 3200, 'the typical ramped flip is too long', { medianMs: f1(median) });
+  ok(worst <= 5000, 'the ramped flip is too long to sit through', { worstMs: f1(worst) });
+  ok(median <= 3600, 'the typical ramped flip is too long', { medianMs: f1(median) });
   // and it has to actually DO something, or there was no point
   ok(mean(descentOn) / mean(descentOff) >= 1.9, 'the descent barely slowed', {
     ratio: +(mean(descentOn) / mean(descentOff)).toFixed(2),
@@ -243,7 +260,7 @@ console.log('\n=== (4) what the ramp actually buys, measured ===');
   ok(worstEndRate >= 0.9, 'the flip never returns to real time before it ends', {
     worstEndRate: +worstEndRate.toFixed(3),
   });
-  console.log(`  longest ramped flip ${f1(worst)} ms (ceiling 4200), median ${f1(median)} ms (ceiling 3200)`);
+  console.log(`  longest ramped flip ${f1(worst)} ms (ceiling 5000), median ${f1(median)} ms (ceiling 3600)`);
   console.log(`  slowest rate at the final frame: ${worstEndRate.toFixed(3)}x — it snaps back to real time`);
 }
 
