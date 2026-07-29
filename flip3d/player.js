@@ -179,7 +179,11 @@ export const DRAMA_CAM = {
 // the coin visibly sped up at the exact moment it should have hit hardest.
 export const SLOWMO = {
   startFrac: 0,        // where in apex->touchdown the ramp opens. 0 = at the apex
-  minRate: 0.26,       // slowest, reached exactly at first contact (~4x slow)
+  // 0.26 (~4x) was too timid — the descent is the shot, and at 4x it still went
+  // past before you could read the coin. 0.10 is a 10x crawl into the landing.
+  // The ASCENT is still untouched at 1x, which is the only reason this does not
+  // read as low gravity; see the note above.
+  minRate: 0.10,       // slowest, reached exactly at first contact (~10x slow)
   impactHoldMs: 70,    // clip-time held at minRate across the landing
   recoverMs: 180,      // clip-time over which it climbs back to recoverRate
   recoverRate: 1.0,    // real time again by the time it stops rattling

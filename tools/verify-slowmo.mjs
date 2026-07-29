@@ -220,8 +220,15 @@ console.log('\n=== (4) what the ramp actually buys, measured ===');
   // The ceiling is on the OUTLIER; the median is the number players live with.
   // Both are asserted, because a good median hides a clip nobody wants to sit
   // through and a good max says nothing about the typical flip.
-  ok(worst <= 2800, 'the ramped flip is too long to sit through', { worstMs: f1(worst) });
-  ok(median <= 2100, 'the typical ramped flip is too long', { medianMs: f1(median) });
+  // These bounds MOVED on 2026-07-29, on explicit direction: "the bullet time
+  // should start near the apex, and then slow down wayyy more on its way down
+  // until it finally lands." The old 2800/2100 encoded a guess of mine that
+  // past ~2.6 s a flip becomes a wait; watching it on a real screen said the
+  // 4x descent was still too fast to read. They are still REAL bounds — a flip
+  // is a daily ritual, not a cutscene — just set around the intended pacing
+  // rather than around my guess at it.
+  ok(worst <= 4200, 'the ramped flip is too long to sit through', { worstMs: f1(worst) });
+  ok(median <= 3200, 'the typical ramped flip is too long', { medianMs: f1(median) });
   // and it has to actually DO something, or there was no point
   ok(mean(descentOn) / mean(descentOff) >= 1.9, 'the descent barely slowed', {
     ratio: +(mean(descentOn) / mean(descentOff)).toFixed(2),
@@ -236,7 +243,7 @@ console.log('\n=== (4) what the ramp actually buys, measured ===');
   ok(worstEndRate >= 0.9, 'the flip never returns to real time before it ends', {
     worstEndRate: +worstEndRate.toFixed(3),
   });
-  console.log(`  longest ramped flip ${f1(worst)} ms (ceiling 2800), median ${f1(median)} ms (ceiling 2100)`);
+  console.log(`  longest ramped flip ${f1(worst)} ms (ceiling 4200), median ${f1(median)} ms (ceiling 3200)`);
   console.log(`  slowest rate at the final frame: ${worstEndRate.toFixed(3)}x — it snaps back to real time`);
 }
 

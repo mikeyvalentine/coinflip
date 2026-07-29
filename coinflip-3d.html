@@ -67,6 +67,7 @@
     <div id="shown"></div>
     <div id="spinCounter">spin: 0.0</div>
     <div id="orient"></div>
+    <button id="again" style="display:none">reset</button>
   </div>
   <div id="out"></div>
   <div id="status">loading…</div>
@@ -265,7 +266,10 @@ async function flip(power = 0.5, fromPose = null) {
   }
   orientArrow.show(p.landedOrientationDeg);
   console.log('[flip3d] flip', ++flipNo, report.pass ? 'OK' : 'FAILED', report);
-  await arm();
+  // DELIBERATELY NOT re-arming. The coin stays exactly where it landed, with
+  // its orientation reading beside it, until the player asks for the next one.
+  // Auto-arming swept the result away in the same breath as showing it.
+  $('#again').style.display = '';
   return report;
 }
 
@@ -355,6 +359,11 @@ const grab = createGrab(canvas, {
 // LOAD-BEARING: a motionless pointer emits no events, so this is the only thing
 // that can fire the idle re-arm. Without it the feature does not exist.
 scene.onFrame(() => grab.tick());
+
+$('#again').addEventListener('click', async () => {
+  $('#again').style.display = 'none';
+  await arm();
+});
 
 await arm();
 $('#status').textContent = library
