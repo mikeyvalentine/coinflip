@@ -289,6 +289,27 @@ export function expectedSide(startFace, halfFlips) {
 export function assertOutcome(o) {
   if (!o || typeof o !== 'object') throw new Error('outcome missing');
   if (o.startFace !== 'Heads' && o.startFace !== 'Tails') throw new Error('bad startFace: ' + o.startFace);
+
+  // THE EDGE (§6.6): the coin comes to rest on its rim. It SWEEPS — side,
+  // orientation and spin all lose — so none of the bet axes carry meaning and
+  // every one of them is null. That is why this returns early instead of
+  // loosening the checks below: a validator that merely tolerates nulls would
+  // also wave through a face landing that had lost its quadrant, which is the
+  // exact shape a faked Edge would take.
+  //
+  // The parity rule is skipped for the same reason, not as an exemption: parity
+  // says which FACE lands given a half-flip count, and a coin on its rim landed
+  // on neither. Asserting it would be asserting something meaningless.
+  if (o.edge === true) {
+    if (o.side !== 'Edge') throw new Error('edge outcome must have side "Edge", got ' + o.side);
+    if (o.spins != null) throw new Error('edge outcome must not carry spins: ' + o.spins);
+    if (o.quadrant != null) throw new Error('edge outcome must not carry a quadrant: ' + o.quadrant);
+    if (o.orientationDeg != null) throw new Error('edge outcome must not carry an orientation: ' + o.orientationDeg);
+    return o;
+  }
+  // Reject the inverse too. `side:'Edge'` without `edge:true` is how a rim clip
+  // would slip into the face path, and it would then be scored as a face bet.
+  if (o.side === 'Edge') throw new Error('side "Edge" requires edge:true');
   if (o.side !== 'Heads' && o.side !== 'Tails') throw new Error('bad side: ' + o.side);
   if (!QUADRANTS.includes(o.quadrant)) throw new Error('bad quadrant: ' + o.quadrant);
   if (!Number.isInteger(o.spins) || !SPIN_VALUES.includes(o.spins)) throw new Error('bad spins: ' + o.spins);

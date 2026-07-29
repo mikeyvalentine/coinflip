@@ -30,6 +30,14 @@ import { SPIN_VALUES, QUADRANTS, quadrantFromOrientation } from './contract.js';
 
 /** The default spin band: all 32 values. See `opts.band` on resolveFlip. */
 export const FULL_SPIN_BAND = SPIN_VALUES;
+
+/**
+ * The rim landing's probability. Priced at 499x on a 1-in-500 shot — roulette's
+ * N-1-on-N — so the Edge bet carries exactly the same 0.20% as every other bet
+ * rather than a worse one. Tunable here and nowhere else; every bet's edge
+ * moves with it, which is the point.
+ */
+export const EDGE_P = 1 / 500;
 // Library-free fallback only. Orientation resolves to two decimals (§6.5),
 // uniform over [0,360). 36000 cells divide exactly by 4, so each quadrant
 // bucket stays exactly 25%.
@@ -74,14 +82,55 @@ export async function resolveFlip(seed, library = null, opts = {}) {
   const spins = band[idx];
   const landsHeads = spins % 2 === 0 ? startHeads : !startHeads;
 
+  // ---------------------------------------------------------------------
+  // THE EDGE (§6.6). 1/500, pays 499x, and it SWEEPS: side, orientation and
+  // spin all lose. It is the only thing creating the game's uniform 0.20%
+  // house edge, so its draw is load-bearing on the odds of every bet.
+  //
+  // DRAWN FROM ITS OWN HASH, exactly as coinflip-preview.html draws it —
+  // same 'edge::' prefix, same 64-bit prefix, same modulo, same threshold —
+  // so the two builds agree seed for seed. Deriving it from the spin or
+  // quadrant draw would correlate the house edge with a bet axis, which is
+  // the one thing the edge must never do.
+  //
+  // It is computed AFTER the face draws and folded in at the end, so a seed
+  // that does not draw an Edge produces bit-for-bit the outcome it always
+  // did. The rim is an override, not a reordering.
+  // ---------------------------------------------------------------------
+  const edge = (Number(big(await sha('edge::' + seed), 64) % 100000n) / 100000) < EDGE_P;
+
   const base = {
     startFace: startHeads ? 'Heads' : 'Tails',
     side: landsHeads ? 'Heads' : 'Tails',
     spins,
-    // "The Edge" (§6.6) is not baked and must never be faked: no edge clip
-    // exists, so the renderer would have to invent the landing.
     edge: false,
   };
+
+  if (edge) {
+    // A rim landing has no side, no rotation count and no settled yaw — the
+    // coin never lands on a face, so there is nothing for those axes to mean.
+    // NEVER FAKE IT: with no rim clip to play there is no honest picture of
+    // this outcome, so fail loudly rather than quietly serving a face landing
+    // and calling it an Edge.
+    if (library) {
+      const pool = library.edgeIndex;
+      if (!pool || !pool.length) {
+        throw new Error('the seed drew an Edge but the library carries no rim clips — refusing to fake the landing');
+      }
+      const k = Number(big(await sha('edgeclip::' + seed), 32) % BigInt(pool.length));
+      return {
+        startFace: base.startFace,
+        side: 'Edge', edge: true,
+        spins: null, orientationDeg: null, quadrant: null,
+        clipId: pool[k].id,
+      };
+    }
+    return {
+      startFace: base.startFace,
+      side: 'Edge', edge: true,
+      spins: null, orientationDeg: null, quadrant: null,
+    };
+  }
 
   if (library) {
     const quadrant = QUADRANTS[Number(big(await sha('quad::' + seed), 32) % 4n)];

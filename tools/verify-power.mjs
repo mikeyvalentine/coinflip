@@ -117,27 +117,39 @@ console.log('\n=== (4) THE BOUNDARY: the spin band defaults to all 32 and power 
   let bad = 0;
   const hist = Object.fromEntries(SPIN_VALUES.map((s) => [s, 0]));
   const sideHist = { Heads: 0, Tails: 0 };
+  let edgeSeeds = 0;
   for (let i = 0; i < N; i++) {
     const seed = 'band::' + i;
     const a = await resolveFlip(seed);                                  // pre-power call shape
     const b = await resolveFlip(seed, null, {});                        // new arg, omitted band
     const c = await resolveFlip(seed, null, { band: SPIN_VALUES });     // explicit full band
     const d = await resolveFlip(seed, null, { band: outcomeBand(SPIN_VALUES, Math.random()) });
-    hist[a.spins]++; sideHist[a.side]++;
+    // THE EDGE HAS NO SPIN. A rim landing sweeps every axis, so its outcome
+    // carries spins/side/quadrant as null by design — histogramming those would
+    // put a `null` bucket in the tally and make chi-square NaN. They are counted
+    // separately: excluding them silently would let the rim rate drift unseen.
+    if (a.edge) { edgeSeeds++; } else { hist[a.spins]++; sideHist[a.side]++; }
     for (const other of [b, c, d]) {
       if (other.spins !== a.spins || other.side !== a.side || other.startFace !== a.startFace
-        || other.quadrant !== a.quadrant || other.orientationDeg !== a.orientationDeg) {
+        || other.quadrant !== a.quadrant || other.orientationDeg !== a.orientationDeg
+        || other.edge !== a.edge) {
         bad++; if (bad < 3) fail('band parameter changed an outcome', { seed, a, other });
       }
     }
   }
+  const spun = N - edgeSeeds;
   const counts = Object.values(hist);
-  const exp = N / 32;
+  const exp = spun / 32;
   const chi = counts.reduce((s, c2) => s + (c2 - exp) ** 2 / exp, 0);
   console.log(`  ${N} seeds x 4 call shapes: ${bad} divergences`);
-  console.log(`  spin uniformity chi-square ${chi.toFixed(1)} (df=31, expect < ~55); heads rate ${(sideHist.Heads / N).toFixed(4)}`);
+  console.log(`  ${edgeSeeds} drew the RIM (no spin, no side) and are tallied apart; ${spun} spun`);
+  console.log(`  spin uniformity chi-square ${chi.toFixed(1)} (df=31, expect < ~55); heads rate ${(sideHist.Heads / spun).toFixed(4)}`);
   ok(chi < 60, 'spin draw is not uniform', { chi });
-  ok(Math.abs(sideHist.Heads / N - 0.5) < 0.02, 'side draw is not 50/50');
+  ok(Math.abs(sideHist.Heads / spun - 0.5) < 0.02, 'side draw is not 50/50');
+  // The rim rate is checked here too, so a change that quietly stopped drawing
+  // Edges would show up in the suite that owns the draw rather than only in the
+  // one that owns the Edge.
+  ok(edgeSeeds > 0 && edgeSeeds < N * 0.01, 'the rim rate is implausible', { edgeSeeds, N });
 
   // The seam must stay stubbed, loudly.
   let threw = false;

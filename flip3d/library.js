@@ -97,6 +97,40 @@ export async function loadClipLibrary(opts = {}) {
   const index = manifest.index;
   if (!Array.isArray(index) || !index.length) throw new Error('clip library manifest has no index');
 
+  // ---------------------------------------------------------------------
+  // THE RIM CLIPS ARE DELIBERATELY NOT PACKED.
+  //
+  // The pack format cannot represent an Edge, and the failure is not graceful:
+  // `quadrant` is stored as a UInt8 index into QUADRANTS, so a null becomes -1
+  // and writeUInt8 THROWS; `orientationDeg` is a float, so a null coerces to 0
+  // and would come back as a perfectly valid-looking 0.00 deg in the NE bucket.
+  // A rim landing would decode as a FACE landing. Teaching the format a
+  // "no quadrant" sentinel means a version bump for 12 clips out of 1036.
+  //
+  // Against that, the size argument is nothing: only the ~9.5 kB index is
+  // loaded up front, and a clip is fetched only when a seed actually draws the
+  // Edge — 1 flip in 500. So they stay raw JSON, served by the path that
+  // already works, and the rarest and most dramatic event in the game gets no
+  // new failure mode.
+  //
+  // Absent entirely, the library still loads and only an Edge draw fails —
+  // loudly, in outcome.js, rather than by quietly serving a face landing.
+  // ---------------------------------------------------------------------
+  const edgeBase = opts.edgeBase ?? base + '../out-edge/';
+  let edgeIndex = [];
+  if (opts.edge !== false) {
+    try {
+      const er = await doFetch(edgeBase + 'edge-library.json');
+      if (er.ok) {
+        const em = await er.json();
+        edgeIndex = Array.isArray(em.index) ? em.index : [];
+      }
+    } catch (err) {
+      console.warn('[flip3d] rim clips unavailable; an Edge draw will fail rather than fake it:', err.message);
+    }
+  }
+  const edgeById = new Map(edgeIndex.map((e) => [e.id, e]));
+
   // --- index it ------------------------------------------------------------
   const byId = new Map();
   const cells = new Map();
@@ -138,6 +172,17 @@ export async function loadClipLibrary(opts = {}) {
   const inflight = new Map();
   function raw(id) {
     if (cache.has(id)) return Promise.resolve(cache.get(id));
+    // Rim clips are never in the pack (see the note at load), so they always
+    // come from their own directory as raw JSON. Checked before the pack so a
+    // future id collision cannot route an Edge into the face library.
+    if (edgeById.has(id)) {
+      if (inflight.has(id)) return inflight.get(id);
+      const p = doFetch(`${edgeBase}clips/${id}.json`)
+        .then((r) => { if (!r.ok) throw new Error(`rim clip ${id} missing (${r.status})`); return r.json(); })
+        .then((c) => { cache.set(id, c); inflight.delete(id); return c; });
+      inflight.set(id, p);
+      return p;
+    }
     // The pack is resident, so this is a decode rather than a fetch — there is
     // nothing to be in flight and nothing to prefetch.
     if (packed) {
@@ -174,7 +219,19 @@ export async function loadClipLibrary(opts = {}) {
   function select(outcome, sel = {}) {
     assertOutcome(outcome);
     if (outcome.edge) {
-      throw new Error('outcome asks for an edge landing; the bake contains no edge clips (design doc §6.6, not built)');
+      // Rim landings live in their own small library — 12 clips, no cell grid,
+      // because the Edge sweeps every axis so there is no (spin, quadrant) to
+      // index by. Fail loudly rather than substituting a face landing.
+      if (!edgeIndex.length) {
+        throw new Error('outcome asks for an edge landing but no rim clips are loaded — refusing to fake it');
+      }
+      const wanted = outcome.clipId && edgeById.get(outcome.clipId);
+      const entry = wanted
+        || edgeIndex[Math.floor((sel.rand ? sel.rand() : Math.random()) * edgeIndex.length) % edgeIndex.length];
+      if (outcome.clipId && !wanted) {
+        throw new Error(`edge clipId ${outcome.clipId} is not a rim clip`);
+      }
+      return { entry, exact: true, orientationErrorDeg: 0, pool: edgeIndex, edge: true };
     }
     const p = pool(outcome);
 
@@ -231,7 +288,18 @@ export async function loadClipLibrary(opts = {}) {
     const tails = outcome.startFace === 'Tails';
     const src = rawClip.frames;
     const last = src[src.length - 1];
-    const yOffset = COIN_HALF_THICKNESS_M - last.pos[1];
+    // THE REST-HEIGHT LIFT IS FOR FLAT LANDINGS ONLY.
+    //
+    // It exists because the solver settles a flat coin's centre at -0.24..+0.62
+    // mm instead of exactly COIN_HALF_THICKNESS_M, so a sub-millimetre constant
+    // puts it on the table rather than half sunk into it.
+    //
+    // A rim clip's last frame has the coin BALANCED ON ITS EDGE, so its centre
+    // is legitimately at ~9.9 mm — the coin's radius, not half its thickness.
+    // Applying the same correction would drive it 9.1 mm THROUGH the table on
+    // the most dramatic outcome in the game. The offset is not a fix-up to be
+    // applied everywhere; it is a correction for one specific resting pose.
+    const yOffset = outcome.edge ? 0 : COIN_HALF_THICKNESS_M - last.pos[1];
 
     const frames = new Array(src.length);
     for (let i = 0; i < src.length; i++) {
@@ -243,7 +311,12 @@ export async function loadClipLibrary(opts = {}) {
       };
     }
 
-    const side = tails ? (entry.side === 'Heads' ? 'Tails' : 'Heads') : entry.side;
+    // A rim landing is not a face, so the tails re-frame cannot rename it: the
+    // heads/tails swap below would turn 'Edge' into 'Heads' and the clip would
+    // then be checked, and reported, as a face landing.
+    const side = entry.side === 'Edge'
+      ? 'Edge'
+      : (tails ? (entry.side === 'Heads' ? 'Tails' : 'Heads') : entry.side);
     if (side !== outcome.side) {
       throw new Error(`clip ${entry.id} lands ${side} from a ${outcome.startFace} start, outcome says ${outcome.side}`);
     }
@@ -258,7 +331,9 @@ export async function loadClipLibrary(opts = {}) {
         energy: entry.energy,
         startFace: outcome.startFace,
         id: entry.id,
-        source: 'baked',
+        source: entry.edge ? 'baked-edge' : 'baked',
+        // Carried through so nothing downstream has to infer it from a null.
+        ...(entry.edge ? { edge: true, restsOnRim: false, trimmed: true } : {}),
         yOffsetM: +yOffset.toFixed(6),
       },
       frames,
@@ -293,6 +368,9 @@ export async function loadClipLibrary(opts = {}) {
 
   return {
     manifest, index, byId, cells, stats, base,
+    // outcome.js draws uniformly from this when a seed hits the rim, so it must
+    // be the real list — an empty one makes an Edge fail loudly, by design.
+    edgeIndex, edgeById, edgeBase,
     pool, select, materialise, clipFor, prefetch, raw,
     get cached() { return cache.size; },
   };

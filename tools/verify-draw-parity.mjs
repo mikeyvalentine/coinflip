@@ -82,6 +82,22 @@ for (const s of seeds) {
   const a = await P.resolveFlip(s);
   const b = await resolve3D(s, library);
   if (a.startFace !== b.startFace) diff.startFace++;
+  if (!!a.edge !== !!b.edge) diff.edge++;
+  if (a.edge) edgesPreview++;
+  if (b.edge) edges3D++;
+  // ON AN EDGE THE TWO BUILDS DIFFER IN SHAPE, AND THAT IS DELIBERATE.
+  //
+  // The preview leaves side/spins/quadrant populated and lets `edge:true` sweep
+  // them at settlement. The renderer nulls them, because it has to hand the
+  // outcome to assertOutcome and then to a rim clip that HAS no side, no
+  // rotation count and no settled yaw — carrying stale values there invites
+  // something downstream to score a bet the rim already swept.
+  //
+  // So those fields are not comparable on an Edge, and comparing them would
+  // report four failures for one intentional difference. What MUST agree is
+  // WHICH SEEDS draw the rim — that is what sets the house edge — and it is
+  // asserted separately below.
+  if (a.edge || b.edge) { if (samples.length < 3) samples.push({ seed: s, preview: a, renderer: b }); continue; }
   if (a.spins !== b.spins) diff.spins++;
   if (a.side !== b.side) diff.side++;
   // Compared RAW. There used to be a lookup translating NE/SE/SW/NW to
@@ -90,9 +106,6 @@ for (const s of seeds) {
   // behind a translation that silently made it pass.
   if (a.quadrant !== b.quadrant) diff.quadrant++;
   if (Math.abs(a.orientationDeg - b.orientationDeg) > 1e-9) diff.orientationDeg++;
-  if (!!a.edge !== !!b.edge) diff.edge++;
-  if (a.edge) edgesPreview++;
-  if (b.edge) edges3D++;
   if (samples.length < 3) samples.push({ seed: s, preview: a, renderer: b });
 }
 console.table(Object.entries(diff).map(([field, n]) => ({
@@ -125,31 +138,43 @@ console.log(`\n  *** THE EDGE: preview drew it ${edgesPreview}/${N} times, the r
 // everyone to ignore it and "all suites green" would stop meaning anything.
 // What IS a failure is someone closing the gap by faking a rim landing the
 // physics never produced.
-const EDGE_RENDERABLE = false;   // flip when a real rim landing exists
+// THE GAP IS CLOSED. This was `false`, with an inverted assertion that failed
+// if the renderer ever produced an Edge — because with no rim clip in the bake,
+// an Edge could only have been faked. `bake/out-edge/` now holds 12 real rim
+// landings, so the assertion flips to its true form: the renderer must draw
+// them, and must agree with the game about WHICH seeds draw them.
+const EDGE_RENDERABLE = true;
 if (EDGE_RENDERABLE) {
   ok(edges3D > 0, 'the renderer claims it renders the Edge but never drew one', { edges3D });
+  ok(diff.edge === 0,
+    'the two builds disagree about which seeds land on the rim — the house edge would differ',
+    { disagreements: diff.edge, edgesPreview, edges3D });
 } else {
   ok(edges3D === 0,
     'the renderer produced an Edge with no rim clip — that landing was FAKED', { edges3D });
 }
 
-console.log('\n=== (3) BLOCKER: the Edge is not a cosmetic gap ===');
+console.log('\n=== (3) THE EDGE, now rendered rather than blocked ===');
 {
-  const anyRim = library.index.some((e) => e.side !== 'Heads' && e.side !== 'Tails');
-  ok(!anyRim || true, 'library rim check');
-  console.log(`  baked clips whose side is neither Heads nor Tails: ${library.index.filter((e) => e.side !== 'Heads' && e.side !== 'Tails').length}`);
-  console.log('  flip3d/outcome.js hard-codes `edge: false` and says why: no rim clip');
-  console.log('  exists, and faking the landing is not allowed.');
+  // This section used to be titled BLOCKER. The rim clips now exist, so it
+  // records what closed rather than what is missing — the history matters,
+  // because "the renderer cannot show an Edge" is exactly the kind of thing
+  // that gets quietly re-broken by someone optimising the library.
+  console.log(`  rim clips loaded: ${library.edgeIndex.length} (bake/out-edge/, kept OUT of the pack)`);
+  console.log(`  face clips whose side is neither Heads nor Tails: `
+    + `${library.index.filter((e) => e.side !== 'Heads' && e.side !== 'Tails').length} — the two libraries stay separate`);
+  ok(library.edgeIndex.length > 0,
+    'no rim clips are loaded — the renderer is back to being unable to show an Edge');
   console.log('');
   console.log('  The Edge is the ONLY thing creating a house edge — a uniform 0.20% on');
-  console.log('  every bet — and it pays 499x on 1/500. A merged build that cannot');
-  console.log('  render it either drops the house edge to ZERO or shows the player a');
-  console.log('  landing that did not happen. Neither is shippable.');
+  console.log('  every bet — and it pays 499x on 1/500. A build that cannot render it');
+  console.log('  either drops the house edge to ZERO or shows the player a landing that');
+  console.log('  did not happen. Both builds now draw it on the SAME seeds.');
   console.log('');
-  console.log('  So the merge needs, BEFORE it can start: a rim landing the renderer');
-  console.log('  can actually play. Either baked rim clips, or a procedural rim settle.');
-  console.log(`  At 1/500 that is ~${(N / 500).toFixed(0)} flips in every ${N} — rare, but it is the`);
-  console.log('  single most dramatic moment in the game and it currently has no picture.');
+  console.log('  The rim clips are NOT in the packed library on purpose: the pack stores');
+  console.log('  quadrant as a UInt8 index, so a null becomes -1 and throws, and');
+  console.log('  orientationDeg as a float, so a null would silently decode as 0.00 deg');
+  console.log('  in the NE bucket — a rim landing arriving as a FACE landing.');
 }
 
 console.log('\n=== (4) both draws are still UNIFORM, which is what fairness needs ===');
@@ -165,6 +190,10 @@ console.log('\n=== (4) both draws are still UNIFORM, which is what fairness need
   const pq = []; const rq = []; const ps = []; const rs = [];
   for (const s of seeds) {
     const a = await P.resolveFlip(s); const b = await resolve3D(s, library);
+    // Rim landings have no quadrant and no side to tally — including them puts
+    // a `null`/'Edge' bucket in the histogram and the chi-square goes NaN.
+    // They are ~0.2% of seeds and are counted in section (1).
+    if (a.edge || b.edge) continue;
     pq.push(a.quadrant); rq.push(b.quadrant); ps.push(a.side); rs.push(b.side);
   }
   console.table([
