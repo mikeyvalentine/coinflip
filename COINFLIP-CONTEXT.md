@@ -7,26 +7,39 @@ models are listed at the bottom so they aren't accidentally reintroduced.
 
 ---
 
+## 0. START HERE
+
+**It is deployed.** github.com/mikeyvalentine/coinflip → GitHub Pages:
+- `https://mikeyvalentine.github.io/coinflip/coinflip-3d.html` — the renderer
+- `https://mikeyvalentine.github.io/coinflip/coinflip-preview.html` — the 2D game
+- `https://mikeyvalentine.github.io/coinflip/minigame/clean-demo.html` — coin cleaning
+
+**Run the suites, not the browser.** `node test.js` plus every `tools/verify-*.mjs` (17 of them), and `cd server && node --test "test/unit/*.test.mjs"`. They are headless because the preview pane on the dev machine does not render, `requestAnimationFrame` never fires, and CSS transitions never advance.
+
+**Nothing visual is proven.** Every renderer claim in this file is geometry, timing and state — asserted headlessly. Whether any of it LOOKS right has only ever been checked by the user's eye on the deployed page. When you finish something visual, say so plainly rather than implying it was verified.
+
+**The three lessons this project keeps re-learning:**
+1. **A verifier that hardcodes its own input passes forever while asserting a configuration that no longer exists.** Found three times in one day (`verify-pickup`, `verify-orient-arrow`, `verify-slowmo` all retyped the camera or the lens). Import the constant; never retype it.
+2. **A test that cannot fail is worse than no test.** `2*acos(|dot|)` folds into [0,180] by construction and reported "safe" at 30fps where the coin turns 469°.
+3. **Measure, do not sample.** A 32-clip sample of a 1024-clip library missed the fastest clip and understated an aliasing failure by 60°.
+
+---
+
 ## 1. Files
 
 | Path | What |
 |---|---|
-| `coinflip-preview.html` | The whole 2D lite game — single self-contained file, no build step. The live prototype and source of truth for GAMEPLAY. |
-| `coinflip-3d.html` + `flip3d/` | The 3D renderer. Plays baked clips. Source of truth for the VISUAL/physics side. |
-| `tools/verify-*.mjs` | **The headless suites — run these, not the browser.** All ten green: `verify-clips`, `verify-power`, `verify-slowmo`, `verify-grab`, `verify-leadin`, `verify-pickup`, `verify-orient-arrow`, `verify-drop`, `verify-responsive`, plus `test.js`. No GPU, no DOM, because the preview pane is usually hidden and cannot be trusted to render or fire rAF. Every one exits non-zero on failure. |
-| `bake/` | The Rapier physics bake harness (Phase 0). **DONE** — produces the curated clip library. |
-| `bake/out/clips/` + `bake/out/library.json` | 1024 baked clips, verified. |
-| `sim/` | **Population economy simulation.** `node sim/population.mjs` (seed `coinflip-pop-1`, 43.8M player-days, ~7s). Refuses to print an economic result until 9 self-tests pass, including a zero-edge control. Found the Spread career-EV problem and the settlement rounding bug in §3. |
-| `server/` | Cloudflare Worker backend (auth, economy, leaderboard, persistence). Started, unverified (see §6). |
-| `identity.js`, `daringness.js`, `fingerprint.js`, `collectSignals.client.js` | Identity/entropy modules. **Do not edit** — `test.js` proves fairness against them. |
-| `game.js` | Older text-only core loop. **STALE** — still on the pre-session spin model (SPIN_N=33, includes 24). Superseded by the preview; reference only. |
-| `shareCard.js` | Share-card generator. Written, working, still not wired into either build. |
-| `test.js` | **Proves fairness**: 200k flips, chi-square under threshold, heads 0.500 across wildly different identities → identity never skews outcomes. `node test.js`. Must stay green after any seeding/outcome change. |
-
-Note: the delivered zip flattened the tree — `identity/`-module files sit next to
-the HTML rather than in a subdir.
-
----
+| `coinflip-preview.html` | The whole 2D game — self-contained, no build step, no imports. **Source of truth for GAMEPLAY.** That self-containment is deliberate: it is what lets it be published as a standalone artifact. |
+| `coinflip-3d.html` + `flip3d/` | The renderer. **Source of truth for the VISUAL/physics side.** Pick up the coin, wind up, throw. |
+| `minigame/` | Coin cleaning — the busker's recovery, replacing the Broke Flip. `clean.js` is pure state; `build-demo.mjs` inlines it into a standalone page and verifies the copy cannot drift. |
+| `tools/verify-*.mjs` | **The 17 headless suites. Run these, not the browser.** Every one exits non-zero on failure. |
+| `bake/` | The Rapier bake. `out/` = 1024 face clips, `out-edge/` = 12 rim clips, `out-min/` = the packed library the renderer actually loads. |
+| `sim/` | Population economy simulation. `node sim/population.mjs`. Refuses to print an economic result until 9 self-tests pass. Found the Spread career problem, the settlement rounding bug, and killed the loan idea. |
+| `server/` | Cloudflare Worker + D1. 44/44 unit tests, never deployed, **and still on the dead Spread model**. |
+| `identity.js`, `daringness.js`, `fingerprint.js`, `collectSignals.client.js` | Identity/entropy. **Do not edit** — `test.js` proves fairness against them. |
+| `game.js` | **STALE.** Pre-session spin model. Reference only. |
+| `shareCard.js` | Written, **stale**, unwired. See Debts. |
+| `test.js` | **Proves fairness**: identity never skews outcomes. Must stay green after any seeding/outcome change. |
 
 ## 2. Core design (locked)
 
@@ -61,25 +74,33 @@ You TYPE a rotation value (4–20 in 0.5 steps, 12 rejected). Alone it's an exac
 ### The Edge — the house-edge mechanism
 Rim landing, probability **1/500**, pays **499×** (roulette's N−1-on-N). It SWEEPS: on a rim landing Side/Orientation/Spin all lose. This is the ONLY thing creating a house edge, and because every bet's EV is exactly (1−p) it's a **uniform 0.20% edge on every bet**. Reads PURPLE in the reveal, never green. Tunable via the 1/500 frequency alone.
 
-### Spread slider — ⚠️ THE "CAN'T BE GAMED" CLAIM IS FALSE AT CAREER SCALE
-One slider 0 (safe) → 1 (wild). Weights each placed bet by `mult^α`, `α = 2·(2t−1)`. t=0.5 is the equal split. Low t piles the wallet on heads/tails; high t pushes to long shots.
+### SPREAD / RIDE — two presets. The slider is GONE.
+The wallet no longer splits by a slider. There are two structurally different bets, and the player picks one:
 
-**PER FLIP the claim holds exactly.** EV = `1−EDGE_P` = 0.998 at every slider position and every bet shape — closed form to 2.2e-16, and 3M common-random-number paired flips agree.
+- **SPREAD** — the wallet splits so **every call that lands pays the same** `K × wallet`, where `K = 1 / Σ(1/mult)`. Back a 32× line with a sliver and a 2× call with the bulk, sized so both come home identical. Many small results.
+- **RIDE** — ONE compound call. Every placed call must land, priced on the **TRUE JOINT probability**, not the product of the multipliers. One huge result, rarely.
 
-**OVER A CAREER IT DOES NOT.** What accumulates is not EV, it is `E[max(balance − WALLET_FLOOR, 0)]` per flip — because **banking is a ratchet** (banked ₿ can never be lost) and the **Broke Flip floors losses** (bust → free 50 ₿). Gains keep, losses refund. Under that asymmetry variance is an ASSET rather than a preference, and the slider becomes a straightforward optimisation. Exact enumeration of all 8 win/lose combinations at the floor, independently reproduced:
+Each shows **two numbers, live**: its chance of paying NOTHING and its BEST CASE. That pairing is the point — risk and reward on screen together.
 
-| t | 0 | 0.3 | 0.5 | 0.75 | 1 |
-|---|---|---|---|---|---|
-| EV | 0.998 | 0.998 | 0.998 | 0.998 | 0.998 |
-| **bankable ₿/flip** | 20.04 | **17.99** (min) | 24.21 | 40.71 | **47.41** (max) |
+| board | SPREAD | RIDE |
+|---|---|---|
+| sharp (Heads · 1 quadrant · exactly 10.0) | nothing 38%, best 384 ₿ | nothing 99%, best 12,826 ₿ |
+| loose (Heads · 3 quadrants · 5.0+) | nothing 1%, best 137 ₿ | nothing 67%, best 285 ₿ |
 
-**2.64× between the best and worst settings.** The sim's 730-day paired run puts it at 7,520 banked at t=0.5 vs 10,727 at t=1 (disjoint 95% CIs) and — the load-bearing consequence — **epic goes from 0.0% reachable to 18.8%**. Epic is the tier that is *supposed* to be unreachable by grinding, so the slider currently decides the game.
+**RIDE MUST BE PRICED ON THE JOINT ODDS.** `landsHeads = (spins % 2 === 0) ? startHeads : !startHeads` — **side is spin PARITY**, so "Heads" beside an even-rotation line is one call wearing two hats. Multiply the marginals and you post 256× on a bet whose honest price is **128×**, every day, forever. `tools/verify-presets.mjs` §1 pins this.
 
-**Two corrections to the sim's own write-up, from re-deriving it directly:**
-- The minimum is at **t ≈ 0.3**, not at the midpoint.
-- The preview's default is **t = 0**, not t = 0.5 (`<input id="risk" value="0">`, and `resetForm()` sets 0). Near-worst, but not the worst.
+Half of all side + exact-spin pairings are **contradictory** (Heads + an odd-rotation line can never land). RIDE greys out when unwinnable and `canFlip()` refuses it in LOGIC, not just CSS.
 
-Fixing it means breaking one of three legs — the ratchet, the floor, or the reweighting — and each is load-bearing elsewhere. **Not fixed. Do not re-assert "provably can't be gamed" until it is.** Feeds `daringness.js`.
+**Why the slider went.** It claimed neutrality and hid a dominant setting near its own default. Per flip EV was provably flat; over a CAREER it was not, because banking ratchets and the Broke Flip floors losses, so variance is an asset. Measured 2.64× between the best and worst positions. It also collapsed three orthogonal questions about the coin onto one "how long are the odds" axis, and duplicated a risk dial the player already has three sharper versions of (quadrant count, spin-line width, Side-vs-Edge).
+
+**The settlement rounding bug died with it.** The old `mult^α` weighting could put 0.38% of the wallet on Side, so winning ONLY Side from 50 ₿ returned 0.383 ₿ and rounded to a bust. Under `w = 1/mult` the worst K over EVERY possible board is 0.4507, so a single winning line always returns ≥22.5 ₿ on a 50 ₿ wallet. It cannot round to zero.
+
+### ⚠️ THE ECONOMY IS FUNDED BY THE BROKE FLIP — measured, and it constrains everything
+There is no stipend, so ₿ enters the game at exactly ONE place: the payout when you bust. **Banked ÷ injected ≈ 1.0** (measured 1.07 over 2000 players × 730 days). Every ₿ in every bank is that money passed through the wallet and skimmed by the 0.20% edge.
+
+**This kills the "make the Broke Flip a loan" idea, which was modelled across 10 variants and rejected.** A loan does not tax the exploit, it reclaims the entire money supply: net banked drops ~7,600 → ~980 while the variance advantage barely moves (2.09× → 1.74×). None of the ten variants killed the convexity; all ten left dead days at 42.2–42.4%. 100% debt left 97.8% of players permanently owing. Full report in `sim/loan-report.md`.
+
+**And the "exploit" is partly the SPEC.** The design says epic is *"unreachable by banking — forces riding"*. Measured under the presets: SPREAD reaches epic 0.0%, RIDE 28.1%. Bold play paying more is the design working. What was genuinely broken was a control that claimed neutrality while hiding a best setting — and the presets fixed exactly that.
 
 ### SPIN INPUT BUG — FIXED 2026-07-29
 `validLine` was `/^\d+(\.5)?$/`, so it **rejected "10.0"** — the exact string the game itself prints. The live counter reads `spin: 10.0` and a lost line reports `10.0`, so a player read a value off the screen, typed it straight back, and got silence: no multiplier, no bet, no reason given. Now accepts any spelling of a half step and normalises via `lineValue()`. `12` stays rejected (unattainable median, by design).
@@ -129,11 +150,15 @@ Each placed bet resolves step by step down the form. The **running total lives I
 
 ---
 
-## 5. Open bugs — all resolved this session
+## 5. WHAT IS ACTUALLY PENDING
 
-1. **SPIN UNIT COLLISION — FIXED.** Rotations player-facing, half-flips internal, single conversion boundary. Verified: counter value always wins, previously-dead `.5` guesses all win, 32× stays fair.
-2. **Decimal multipliers — RESOLVED.** Spin is a typed line priced `32/covered`; integer ladder is discoverable, not universal.
-3. **Unbet rows during reveal — RESOLVED.** Arrows always shown; spin shows where it landed on a loss; amounts per row.
+**Blocking the merge**
+1. **The Edge is baked but wiring is IN FLIGHT.** 12 verified rim clips in `bake/out-edge/`. `outcome.js` hard-codes `edge: false`, `library.js` does not know about them, `contract.js#assertOutcome` rejects `side:'Edge'`. Watch `bake/encode.js` — it assumes a FLAT final frame for its verbatim-last-frame trick and edge clips end at ~90° tilt.
+2. **The 2D/3D merge.** The two builds have never talked to each other and there are TWO implementations of the outcome draw. `tools/verify-draw-parity.mjs` is the gate: `startFace`/`spins`/`side` already agree exactly; the quadrant divergence is two independent FAIR draws disagreeing (both uniform, χ² 3.29 and 6.11), so picking either loses nothing.
+
+**Decisions, not tasks**
+3. **The core loop** — see §6. Biggest open problem in the project.
+4. **Cloudflare** — parked by the user. Do not deploy the old economy.
 
 ---
 
@@ -169,44 +194,42 @@ Slow motion and the camera push-in share ONE window: apex → first contact.
 - **Share card** — `shareCard.js` written, not wired.
 - **Leaderboard + persistence** — infra agent (`server/`) started a Cloudflare Worker + D1 (`migrations/0001_init.sql`) + Google sign-in + salt commit/reveal + leaderboard + economy rules + unit tests. **UNVERIFIED**; no `DEPLOYMENT.md` yet. Account creation, secrets, deploy are the user's to do. Dev port 8788.
 
-### THE PICK-UP GESTURE — IN FLIGHT (2026-07-29)
+### THE THROW — DONE AND WIRED. A real throw, not a spring.
+Two phases, and the split is `power = 0.25·wind + 0.50·speed + 0.25·throwDist`:
 
-Replaces the press-and-drag-down charge in `charge.js`. The user's spec, verbatim:
-> "I want the coin to have some sort of pick up state and you can move it up and down and depending on where you release, that is how power is calculated"
-> "It should be how far you pull back and release, which starts calc as soon as you are holding the coin, if you keep fairly still for some time without releasing it, the meter will reset, in case you messed up your wind up"
+- **Pull back (down)** records distance and fills the meter SLOWLY — 25%.
+- **Throw (up)** is measured by the pointer's upward VELOCITY and the distance covered before release — 75%, with speed the single largest term.
 
-**The model.** Press the coin → it leaves the table and follows the pointer. Power calc starts on grab. The **anchor** is the top of the current stroke: moving UP raises it (winding up bigger), moving DOWN builds power = `(anchor − current) / PULL_TRAVEL`. Hold still for `IDLE_RESET_MS` and the anchor snaps to the coin and power falls to 0 — a **re-arm, not a cancel**, so a botched wind-up costs nothing. Release throws; releasing below `MIN_POWER` is "you set it back down" and fires cancel. Escape also cancels.
+- **Velocity comes from a 60 ms WINDOW, endpoint to endpoint** — not per-event deltas. That is what makes a 30 Hz and a 500 Hz pointer read identically (measured spread 0.0000). The window is clipped at the bottom of the pull: unclipped, it straddles the reversal and reports NET displacement, so a snappy down-then-up cancels itself out and the throw phase never opens.
+- **Full speed is BAND-RELATIVE** — crossing the whole lift band in 0.175 s — not absolute px/s. An absolute threshold makes full power progressively cheaper as the window grows (753 px band at 1920 vs 209 px on a phone). **The 0.175 s is an assumption** and the most likely thing to need retuning against a real hand.
+- Release below 120 px/s upward is a DROP, checked BEFORE the power floor — a big wind-up carries 0.25 and would otherwise sneak past a 0.12 floor and throw a coin you never threw.
+- The superseded model was a spring: an anchor tracked the top of the stroke and power was how far you pulled DOWN from it. Do not reintroduce it.
 
-**Coupling: GESTURE ONLY** (decided, not a placeholder). Stroke → power 0..1 → lead-in length, camera, `selectVariant` flickForce. The clip still launches from its baked 0.22 m release point and the lead-in bridges from wherever the coin was let go. The 1024 clips are untouched and `power.js#THE SEAM` stays inert. The alternative — release height IS the launch point — was rejected because every baked clip starts at 0.22 m, so a release above it has no clip to hand off to.
+**Picking the coin up OPENS THE SPACE.** `scene.js#HOLD_SHOT` drops the table out of frame. Stroke 196 → **400 px**, world 31 → **150 mm**, table 93 px off the bottom.
 
-**The numbers that make the three pieces fit — check these before changing any of them:**
-- **The lift ceiling is set by the FRAME, not by taste.** `scene.js#LIFT.maxY = 0.032 m`: the top edge of view crosses the lift line at 0.0451 m, minus a coin radius and margin. Raising it pushes the coin out of shot.
-- **The pull is measured in the coin's VISIBLE travel**, never in raw pixels. The lift band is 107 px on a 480×300 canvas and 384 px at 1920×1080; against a fixed 190 px travel the same lift-and-slam is worth 0.56 power on one and 2.02 on the other. `grab.js` therefore takes `clampY` (the band) and `travelPx` as a FUNCTION (the band's height). Lift to the ceiling, slam to the table = exactly 1.0 on every canvas. `verify-grab.mjs` §10 locks this; it is an integration fault neither module can see alone.
-- **The bridge has 10.2× the margin it needs.** Baked clips open at 0.220 m; the lift ceiling is 0.032 m, so the lead-in always has 0.188 m to accelerate through, against the `player.js#minBridgeMetres()` minimum of 0.0184 m. So the "released above the clip's opening" degenerate branch is **unreachable in play**. If the lift ceiling is ever raised above ~0.202 m that stops being true and the coin gets visibly snatched by the clip.
+**THE MOVING-RULER PROBLEM, and how it is handled.** The camera moves on pick-up, and a gesture measured against a moving camera scores the same motion differently depending on when it happened. So measurement is DEAF for the 180 ms transition (`HOLD_TRANSITION_MS`) while the coin still tracks the pointer — apex and deep re-base to the live position every event, so measuring begins from wherever the hand is when the camera stops.
 
-**Known issue, deliberately NOT fixed — `power.js#throwProfile`:**
-`leadInMs = 2h/v` assumes a pure s² lift, but `player.js` spends `leadInAnticipation` of that duration winding up, so the moving span is only `(1−antic)` of it and the actual exit speed is `v/(1−antic)` — up to **1.35× the intended speed at power 1**, measured across the library. It predates this work. The `fromPose` path already accounts for it, so once every throw carries a `fromPose` the corrected path is the only live one. The one-line fix, if the legacy path is ever kept:
-```js
-leadInMs = clamp((2*h/exitSpeed)*1000 / (1 - LEADIN.anticipationMax*p*p), LEADIN.msMin, LEADIN.msMax);
-```
-`LEADIN.msMin = 70` is likewise now only consulted on the legacy path — the bridge derives its own floor.
+**The pull is measured in the coin's VISIBLE travel**, against `HOLD_SHOT` rather than the live shot. `coinflip-3d.html` passes `clampY` and a `travelPx` function derived from the band, so one full lift-and-slam is exactly 1.0 on any canvas. `verify-grab.mjs` §10 pins it.
 
-**Split (agents, no shared files):**
-| Owns | Job |
-|---|---|
-| `flip3d/grab.js`, `tools/verify-grab.mjs` | the state machine, injectable clock so the idle re-arm is testable with no real time elapsing |
-| `flip3d/player.js`, `tools/verify-leadin.mjs` | `opts.fromPose` — the lead-in bridges from the released pose, exit-speed match preserved at every height |
-| `flip3d/scene.js`, `tools/verify-pickup.mjs` | pointer→world-height projection (derived from the camera, NOT a tuned px/m constant), held-coin pose, shadow as the height cue |
+### THE CAMERA — 45° wide, and it FOLLOWS the coin
+`scene.js#SCENE_FOV_DEG = 45` (~41 mm equivalent), up from 30° (~65 mm). Measured at the flight apex the coin spans 105 px at 30°, 68 px at 45°, 54 px at 55° — **past ~45° it stops reading as a tumbling disc** at the one moment the spin must be legible. The three shot distances were re-solved by `tan(15)/tan(22.5) = 0.6469` so the coin holds its SIZE and the width is what changed; a wider lens at the same distance is just a smaller coin.
 
-**WIRED into `coinflip-3d.html` and all seven suites green.** `createCharge` is retired (only `createMeterView` is still imported from `charge.js`); the browser `selfTestCharge` became `selfTestGrab` and now checks the one thing the Node suite structurally cannot — that the lift band derived from the LIVE canvas rect turns one full lift-and-slam into exactly 1.0.
+**The settle camera tracks the coin's LIVE position** — it does not crane to `finalPos`. The crane is wall time, the coin's journey to rest is clip time, and slow motion pulled them apart: the camera arrived first, framed empty table, and the coin skittered in afterwards.
 
-**RESOLVED — nobody sets the coin down, they LET GO.** (User, 2026-07-29: *"I imagine no one is going to gently put the coin down they are just going to let go."*) So the release-velocity discriminator is not needed and was not built. What falls out of the model is already correct and physical:
-- Let go at the top of a lift → no downward pull → power 0 → **the coin falls.** Not a throw, no flip spent.
-- Let go mid-downstroke → that IS a throw, at whatever the pull measured.
-- Hold still first and the wind-up goes stale (`IDLE_RESET_MS`), so a botched wind-up costs nothing.
-- `minPower` is **0.12** on the grab path (vs `power.js#MIN_POWER` 0.06). Under `charge.js` the coin only moved on a deliberate drag; now it follows the pointer the whole time, so a twitch on release would be a live throw — and a throw spends the day's only flip.
+### SLOW MOTION — opens BEFORE the apex
+`SLOWMO`: `preApexFrac 0.22`, `shape 1.8`, `minRate 0.10`, recovering to 1× over the settle.
+- The ramp opens **22% of the climb before the apex** so the zoom and the slow-down are already under way as the coin arrives at the top, rather than reacting to it.
+- The curve is `1-(1-t)^1.8`, not smoothstep: rate falls FAST out of the apex instead of easing in gently.
+- **The first 78% of the CLIMB is still exactly 1.000×.** That is the anti-floaty guarantee and it is asserted per clip — a coin that RISES slowly reads as low gravity, and no tuning fixes that.
+- Descent 343 → 1495 ms (4.36×). Median flip **3.35 s**.
 
-**Do NOT snap the coin home on release.** The cancel path used to call `flipper.ready()`, which animates it back to the table — wrong, because the coin is being held in the air and dropped. It now plays a real drop (below).
+### THE ORIENTATION GUIDE — the dial, painted on the coin
+Not a number. Four world-aligned quadrant dividing lines registered to the coin's face, plus a triangle OUTSIDE the rim marking where the design's 12 o'clock landed.
+- **Registered by an exact HOMOGRAPHY (CSS `matrix3d`), not an affine approximation.** A plane-to-plane projective map IS a homography, so four corner correspondences reproduce it exactly: rim error **1e-13 px**. An affine Jacobian would miss by **3.86 px** — a visible mis-registration. `verify-orient-arrow.mjs` asserts the affine error stays LARGE, so the homography can never quietly become ceremony.
+- **No sector shading** (`SECTOR_ALPHA` is 0/0, kept named so the intent is on the record): the wash covered the coin face the guide exists to help you read.
+- **No rim circle**: it re-drew an edge the render already provides, so any registration error showed as a double outline and a correct overlay looked wrong.
+- **The triangle sits OUTSIDE the rim**, apex pointing in, so it stops covering the engraving at the exact bearing being read.
+- `hide()` is called on RESET as well as at the start of the next flip. It used to survive a reset and sit at stale pixels while the camera moved out from under it.
 
 ### The drop — fall, wobble, settle — DONE and wired
 `flip3d/drop.js` + `tools/verify-drop.mjs`. **Five** seeded variants, chi-square 8.1 (df=4) over 6000 seeds:
@@ -275,11 +298,30 @@ Bet axes over all 1024 clips: halfFlips, side, quadrant **exact 1024/1024**; ori
 
 Note: display rate was NEVER the exposure — `playClip` walks the source-frame cursor, not one sample per drawn frame, so it survives 15 Hz. The exposure was always the frame TRACK.
 
-### Debts
-- **Quadrant rename:** preview uses NE/SE/SW/NW; bake + renderer still use N/E/S/W in metadata/filenames. One coordinated rename owed.
-- **Cosmetics pricing** (vs ~6000/yr safe banking): common 1,500 / rare 6,000 / epic 15,000 (unreachable by banking — forces riding) / mythic 50,000. Epic is the load-bearing tier that stops the Spread being a trap.
+### QUADRANT NAMING — SETTLED. NE/SE/SW/NW everywhere.
+`orientationDeg` is measured CLOCKWISE FROM NORTH, so [0,90) runs FROM north TO east — it IS the north-east sector. Calling it 'N' was always wrong and made the bucket look like it meant "pointing north".
 
----
+```
+NE = [0,90)   SE = [90,180)   SW = [180,270)   NW = [270,360)
+```
+
+**N/E/S/W are RESERVED for exact 90° multiples** via `contract.js#exactCardinal(deg)`, which returns a cardinal or null and fires on **4 of 36,000** orientations. It is presentation only — nothing buckets, prices or selects from it. `quadrantFromOrientation()` still returns exactly four values always; 90.00 buckets as SE. A fifth return value would break the dial's four sectors, the library's four cells per spin count and the `4/k` pricing simultaneously, on the rarest possible input.
+
+Migration done in `bake/migrate-quadrant-names.mjs` (idempotent): 1024 clips renamed (the quadrant is in the id), `library.json`, the packed library and `beats.json` all regenerated. 256 per bucket survived. `tools/verify-quadrant-naming.mjs` pins it.
+
+**An id is PROVENANCE, not a label.** 71 of 1024 clip ids name a cell the clip did not land in — the baker banks a missed shot in whichever cell it actually hit while keeping the original tag. Never read a bucket out of an id.
+
+### Debts and dead code
+- **`server/src/economy/bets.js` still implements the Spread slider** — `spreadWeights`, `SPREAD_A`, `mult^alpha` — with 44 passing tests pinning an economy that no longer exists. Port before any deploy.
+- **`game.js` is STALE** (pre-session spin model) and `bake/bake-edge.js` now imports it, so a dead file has a live consumer.
+- **`charge.js`**: only `createMeterView` is still used; `createCharge` died with the gesture rework.
+- **`shareCard.js` is written but stale AND unwired.** Its output says "9 spins" (the internal half-flip unit that must never reach a player — should be rotations), "E side" (retired naming), and "even" (not a bet axis). Needs a pass, not just wiring.
+- **Cosmetics pricing** (vs ~4,525/yr safe banking, not the ~6,000 previously assumed): common 1,500 / rare 6,000 / epic 15,000 / mythic 50,000.
+
+### THE CORE LOOP IS THE BIGGEST OPEN PROBLEM
+**0% of players survive 730 days without busting. ~42% of all days are spent broke**, where "broke" means the real game is unavailable. For a Wordle-lineage daily habit product, two days in five being a consolation mode is worse than anything on the betting board.
+
+Cause is upstream: the wallet is always fully at risk against a ~36% chance of losing every line. The Broke Flip is the ambulance, not the accident. The coin-cleaning minigame addresses ~14 points of it (40.3% → 26.4%) by making recovery DETERMINISTIC — the win is removing the second coin flip, not the amount. The rest is a core-loop decision: smaller mandatory exposure, a higher floor, or a bust costing a day rather than the whole wallet.
 
 ## 7. Superseded — do not reintroduce
 
@@ -291,6 +333,13 @@ Note: display rate was NEVER the exposure — `playClip` walks the source-frame 
 - Fading/hiding unpicked options (now colour). Constant-erase dial painting (now locked fill/wipe per hold). Edge as its own row (now the third Side option). Cardinal-letter dial labels (now arrows).
 - Paged wizard; separate review screen; 4-dot horizontal stepper; Skip/Flip/Start-over buttons; native checkbox for exact.
 - Shared daily flip.
+- **The Spread SLIDER** (`mult^α`, `α = 2(2t−1)`). Replaced by the SPREAD/RIDE presets. It claimed neutrality while hiding a dominant setting near its own default.
+- **A ladder paying by how many calls you got right.** Rejected on sight: every rung of a SHARP board pays more than every rung of a LOOSE one, so being specific read as a free upgrade — it showed the reward and hid the risk.
+- **Making the Broke Flip a loan.** Modelled across 10 variants and rejected: the Broke Flip IS the money supply, so a loan reclaims the economy rather than taxing the exploit.
+- **The spring-loaded throw** (anchor at the top of the stroke, power = pull DOWN from it). Replaced by a real two-phase throw measuring the up-stroke.
+- **Uniform 60fps decimation of the clip library.** It corrupts the half-flip count — a bet axis — on 281 of 1024 clips. The flight is analytic instead.
+- **`2*acos(|dot|)` as an aliasing metric.** It folds every rotation into [0,180] BY CONSTRUCTION, so it reports "safe" at 30fps where the coin turns 469°. A test that cannot fail.
+- Quadrant buckets named N/E/S/W. Now NE/SE/SW/NW; cardinals mean exact 90° multiples only.
 
 ---
 
