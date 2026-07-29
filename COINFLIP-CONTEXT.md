@@ -261,8 +261,30 @@ Fall 74.8–79.1 ms; whole drops 128–1025 ms, median 448 — so it IS nearly a
 - Settles at the exact rest pose, **ORIENTATION 0 = North** — `setRestFace()` parks the design's 12 o'clock there so the coin the player presses sits at the dial's zero, and `verify-clips.mjs` asserts it. The wobble may tilt; it may not yaw.
 - The longest fall is only ~3 cm ≈ **80 ms**, so nearly all the perceived length is the wobble. Do not stretch the fall to pad it — that reads as low gravity, which is the exact failure mode already rejected once (see the apex ramp).
 
+### POWER BUYS APEX — energy re-ranked 2026-07-29
+**A light toss now flies lower than a brutal one.** Through the real `selectVariant` path, apex runs **523 → 640 mm across power 0→1 (+22%)**. It used to be flat: a feather and a brutal pull flew to the same height, which is what made the gesture feel disconnected from the flight.
+
+**The doc used to claim this was impossible and it was wrong by two orders of magnitude.** The old text said the 8 variants in a cell "differ in apex by under 2%" and concluded an apex-ranked variant axis needed a re-bake. Measured over the real library:
+
+| | |
+|---|---|
+| library-wide apex range | 434 – 775 mm (340 mm) |
+| **within-cell** apex spread | min 164, **median 278**, max 336 mm |
+
+So **82% of the entire range already sits inside every individual cell**, with no re-simulation. What was actually true is that `energy` did not RANK by it — it ranked by `curate.js#energyRaw`, a violence scalar dominated by tumble rate, measured **50.9% inverted against apex** i.e. statistically independent. Power moved the coin's horizontal skitter 11→17 cm, which is nearly invisible, and left the height alone.
+
+**The fix was a re-rank, not a re-bake.** `curate.js` now sorts the chosen variants by `diag.apexY` (ties on id, so the order stays deterministic across bakes). `energyRaw` is DELIBERATELY UNCHANGED — it still feeds `featureVector` and therefore the farthest-point diversity sampling, so which clips a bake selects is identical; only the order they are ranked in afterwards moved. Changing both would have re-selected the library, which IS a re-bake.
+
+Migrated with `bake/migrate-energy-apex.mjs` (idempotent, reads apex from the FRAMES not the diag sidecar): 898 of 1024 clips changed energy, then `bake/encode.js` re-packed. **A stale `out-min/` would have kept the old ranking with nothing going red** — the renderer loads the pack, not `library.json` — so `verify-power.mjs` §9 now asserts the two agree.
+
+**THE COUPLING, worth knowing before tuning further:** within a cell the half-flip count is FIXED, so a higher arc means a longer flight and therefore a SLOWER tumble — omega ranks **91.6% inverted against apex**. A brutal pull now buys a high, lazy, long flip (640 mm, 116 rad/s, 944 ms); a feather a low, fast, snappy one (523 mm, 133 rad/s, 853 ms). That is genuinely what the physics says for a fixed flip count, but it means **power no longer selects "violence"** — it selects height, and height costs violence.
+
+**Why only +22% of an available 278 mm:** `selectVariant` targets `0.6·daringness + 0.4·flickForce` with a ±0.18 band, so power alone only sweeps the target across 0.4 of the energy range. Widening that split is the lever if more range is wanted — but it lives in `identity.js`, which is off limits and which `test.js` proves fairness against.
+
 ### Power meter — the ORIGINAL band design (still not built, still open)
 Power slides a **fixed-width band** along the spin range in real time: soft → low spins, hard → high spins; coin lands uniformly inside the band. Width is a FIXED constant — power moves it, never resizes it. **Multipliers are priced to the band width, not the full 32**, so they never move (no live repricing) and there's no edge — narrowing shrinks the payout one-for-one. Even width keeps side 50/50. The outcome request takes an optional band (default full 32); power selects the variant via `selectVariant(..., flickForce=power, ...)` and must NOT bias which cell is drawn. Open sub-choice: band centers on the player's power (aim-then-bet) or on their typed line?
+
+**Note this is now a SEPARATE lever from apex.** The band changes which spin counts are reachable and therefore the posted odds; the apex re-rank changes only which telling of an already-drawn outcome plays. The band remains unbuilt and inert (`power.js#THE SEAM`, `POWER_NARROWS_BAND = false`).
 
 ### Orientation helper arrow — DONE and wired
 

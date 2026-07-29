@@ -416,15 +416,23 @@ console.log('\n=== (8) power -> variant, measured through the real library ===')
     // does not move with power and must not.
     // The one physical quantity `energy` actually orders WITHIN a cell. See the
     // note below: it is also, by design doc §2, the one that carries no bet.
-    ok(rows[i].travelCm > rows[i - 1].travelCm, 'table travel did not grow with power', rows[i]);
+    // APEX IS NOW THE THING POWER BUYS. `energy` ranks by it (bake/curate.js),
+    // so this is the assertion that matters: a light toss must not fly as high
+    // as a brutal one, which is the complaint that prompted the change.
+    ok(rows[i].apexM > rows[i - 1].apexM, 'apex did not grow with power', rows[i]);
   }
   console.log(`  variant escapes from the drawn cell: ${cellEscapes} (must be 0)`);
-  console.log('  NOTE: within a cell the bake fixes halfFlips, so tumble rate, apex and flight');
-  console.log('        time are nearly constant across the 8 variants and do NOT track energy.');
-  console.log('        What energy orders is horizontal launch velocity -> how far the coin');
-  console.log('        skitters. That is the design-doc §2 quantity that means nothing to a');
-  console.log('        bet, so it is the safest possible carrier for visible violence.');
-  console.log(`        travel ${rows[0].travelCm} -> ${rows[4].travelCm} cm (+${(100 * (rows[4].travelCm / rows[0].travelCm - 1)).toFixed(0)}%)`);
+  console.log(`  APEX ${(rows[0].apexM * 1000).toFixed(0)} -> ${(rows[4].apexM * 1000).toFixed(0)} mm `
+    + `(+${(100 * (rows[4].apexM / rows[0].apexM - 1)).toFixed(0)}%) — what the throw now buys`);
+  console.log('  This section previously asserted the OPPOSITE and carried a note saying');
+  console.log('  apex "does NOT track energy" and was near-constant across a cell. That was');
+  console.log('  wrong: the median within-cell apex spread is 278 mm against a 340 mm');
+  console.log('  library range. energy simply did not rank by it — it ranked by a violence');
+  console.log('  scalar that measured 50.9% inverted against apex, i.e. independent.');
+  console.log(`  travel ${rows[0].travelCm} -> ${rows[4].travelCm} cm is now INCIDENTAL, not the point.`);
+  console.log('  Note the coupling: halfFlips is fixed within a cell, so a higher arc is a');
+  console.log('  longer flight and therefore a SLOWER tumble (omega 91.6% inverted against');
+  console.log('  apex). Power buys height, and height costs violence.');
 
   // Full end-to-end: draw an outcome, play it at power 0 and power 1, and check
   // the bet axes are byte-identical while the telling is not.
@@ -457,6 +465,82 @@ console.log('\n=== (8) power -> variant, measured through the real library ===')
   try { await library.clipFor(o, { variant: foreign }); } catch { rejected = true; }
   ok(rejected, 'library accepted a variant from a DIFFERENT cell — the boundary is not enforced');
   console.log(`  out-of-cell variant override rejected: ${rejected}`);
+}
+
+// ===========================================================================
+console.log('\n=== (9) ENERGY RANKS BY APEX, and re-ranking moved no bet ===');
+{
+  // energy decides WHICH TELLING of an already-decided outcome a throw buys.
+  // Re-ranking it reorders the eight variants inside a cell and must touch
+  // nothing else — not which cell was drawn, not the side, not the quadrant.
+  // A cell IS the outcome; the variants are eight ways of showing it.
+  const cells = new Map();
+  for (const e of library.index) {
+    const k = `${e.halfFlips}${e.quadrant}`;
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(e);
+  }
+
+  // apex read from the FRAMES — the thing the renderer actually plays, not a
+  // metadata field that could have drifted from it
+  const apexOf = new Map();
+  for (const e of library.index) {
+    const c = await library.raw(e.id);
+    let a = c.frames[0].pos[1];
+    for (const f of c.frames) if (f.pos[1] > a) a = f.pos[1];
+    apexOf.set(e.id, a);
+  }
+
+  let rankBad = 0; let spreadBad = 0; let dupBad = 0;
+  const spreads = [];
+  for (const [, es] of cells) {
+    const sorted = [...es].sort((a, b) => a.energy - b.energy);
+    for (let i = 1; i < sorted.length; i++) {
+      // Ties break on id, so a STRICT apex increase is not guaranteed. What is
+      // guaranteed is that energy never ranks a lower apex above a higher one.
+      if (apexOf.get(sorted[i].id) < apexOf.get(sorted[i - 1].id) - 1e-9) rankBad++;
+    }
+    const energies = sorted.map((e) => e.energy);
+    if (new Set(energies).size !== energies.length) dupBad++;
+    if (Math.abs(energies[0]) > 1e-9 || Math.abs(energies[energies.length - 1] - 1) > 1e-9) spreadBad++;
+    const ap = es.map((e) => apexOf.get(e.id));
+    spreads.push((Math.max(...ap) - Math.min(...ap)) * 1000);
+  }
+  ok(rankBad === 0, 'energy does not rank by apex within a cell', { rankBad });
+  ok(dupBad === 0, 'a cell has duplicate energy values — the selection band could pick ambiguously', { dupBad });
+  ok(spreadBad === 0, 'a cell does not span the full 0..1 energy range', { spreadBad });
+  spreads.sort((a, b) => a - b);
+  console.log(`  ${cells.size} cells: energy ranks apex, all 8 distinct, spanning 0..1`);
+  console.log(`  within-cell apex spread min ${spreads[0].toFixed(0)} / median `
+    + `${spreads[spreads.length >> 1].toFixed(0)} / max ${spreads[spreads.length - 1].toFixed(0)} mm`);
+
+  // THE FAIRNESS CHECK. Re-ranking inside cells cannot change how many clips
+  // land in each quadrant or on each side, because it never moves a clip
+  // BETWEEN cells. The argument is sound and it is still worth asserting — a
+  // migration that wrote energy against the wrong ids would satisfy the
+  // argument and corrupt the data.
+  const q = {}; const sd = {}; const perCell = new Set();
+  for (const e of library.index) {
+    q[e.quadrant] = (q[e.quadrant] || 0) + 1;
+    sd[e.side] = (sd[e.side] || 0) + 1;
+  }
+  for (const [, es] of cells) perCell.add(es.length);
+  const qv = Object.values(q); const sv = Object.values(sd);
+  ok(qv.every((v) => v === qv[0]), 'quadrants are no longer evenly represented', q);
+  ok(sv.every((v) => v === sv[0]), 'sides are no longer evenly represented', sd);
+  ok(perCell.size === 1, 'cells no longer hold the same number of variants', { sizes: [...perCell] });
+  console.log(`  quadrants ${JSON.stringify(q)}  sides ${JSON.stringify(sd)}  `
+    + `${[...perCell][0]} per cell — unchanged, as a re-rank must leave them`);
+
+  // and the pack the renderer actually loads must agree with the metadata
+  // read the pack straight off disk — fetchShim is scoped to section (7)
+  const packed = JSON.parse(await fs.readFile(path.join(ROOT, 'bake/out-min/index.json'), 'utf8'));
+  const pm = new Map(packed.index.map((e) => [e.id, e.energy]));
+  let packBad = 0;
+  for (const e of library.index) if (pm.get(e.id) !== e.energy) packBad++;
+  ok(packBad === 0, 'the packed library disagrees with library.json on energy', { packBad });
+  console.log(`  packed index agrees on all ${pm.size} clips — a stale pack would keep the`);
+  console.log('  OLD ranking and nothing would go red');
 }
 
 // ===========================================================================

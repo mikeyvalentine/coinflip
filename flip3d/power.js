@@ -88,14 +88,29 @@ export const LEADIN = {
 // knob and apex follows from it (h = g*T^2/8), so this cannot read floaty.
 // T 0.44..0.78 s -> apex 0.24..0.75 m, which brackets what the bake produced.
 //
-// ON THE BAKED PATH APEX IS NOT REACHABLE, and pretending otherwise would mean
-// time-warping a real simulation. Within one cell the bake fixes the half-flip
-// count, which fixes the flight time, which fixes the apex — measured across
-// all 128 cells the 8 variants differ in apex by under 2%. So on the default
-// path power buys: a shorter, harder lead-in (215 -> 131 ms), a coin that
-// travels half again as far, a faster camera, and a different measured settle
-// yaw. If apex is wanted there too, the bake needs an apex-ranked variant axis;
-// `energy` is explicitly not one (bake/curate.js#energyRaw).
+// APEX IS REACHABLE ON THE BAKED PATH, and this comment used to say the
+// opposite. It claimed the 8 variants in a cell "differ in apex by under 2%",
+// concluded apex was unreachable without a re-bake, and was WRONG BY TWO ORDERS
+// OF MAGNITUDE. Measured over the real library: the median within-cell apex
+// spread is 278 mm against a 340 mm library-wide range — 82% of the entire
+// range, sitting unused inside every single cell.
+//
+// What was true is that `energy` did not RANK by it. energy was derived from
+// curate.js#energyRaw, a violence scalar dominated by tumble rate, and measured
+// 50.9% inverted against apex — statistically independent. So power moved the
+// coin's horizontal skitter from ~11 cm to ~17 cm, which is nearly invisible,
+// while the height it flew to was untouched. That is what made a light toss sail
+// exactly as high as a brutal one.
+//
+// `energy` now ranks by apex (bake/curate.js). Through the real selectVariant
+// path power buys 523 -> 640 mm of apex, +22%. It also buys a shorter lead-in, a
+// faster camera and a different settle yaw inside the already-won quadrant.
+//
+// THE COUPLING IS WORTH KNOWING: within a cell the half-flip count is FIXED, so a
+// higher arc means a longer flight and therefore a SLOWER tumble — omega ranks
+// 91.6% inverted against apex. A brutal pull now buys a high, lazy, long flip;
+// a feather a low, fast, snappy one. That is what the physics says for a fixed
+// flip count, but it does mean power no longer selects "violence".
 export const PROC_AIRBORNE = { min: 0.44, max: 0.78 };
 
 // --- camera ----------------------------------------------------------------

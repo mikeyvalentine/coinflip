@@ -168,7 +168,37 @@ export function curateCell(pool, k) {
     chosen = takenIdx.map((i) => pool[i]);
   }
 
-  chosen.sort((a, b) => a.energy0 - b.energy0 || a.id.localeCompare(b.id));
+  // RANK BY APEX, not by energyRaw.
+  //
+  // `energy` is the axis identity.js#selectVariant picks along, so it decides
+  // which telling of an already-decided outcome the player's throw buys. It used
+  // to rank by energyRaw — a "violence" scalar dominated by tumble rate — and
+  // the result was that power moved the coin's horizontal skitter from ~11 cm to
+  // ~17 cm. Nearly invisible. Meanwhile a ~278 mm spread in APEX sat unused
+  // inside every cell (median, against a 340 mm library-wide range), and a light
+  // toss flew exactly as high as a brutal one. That is what made the gesture
+  // feel disconnected from the flight.
+  //
+  // The two are not related: measured across all 128 cells, the old energy rank
+  // was 50.9% inverted against apex — statistically independent. So this is a
+  // real re-ordering, not a relabelling.
+  //
+  // WHAT IT COSTS, and it is worth knowing. Within a cell the half-flip count is
+  // FIXED, so a higher arc means a longer flight and therefore a SLOWER tumble —
+  // measured, omega ranks 91.6% inverted against apex. So a brutal pull now buys
+  // a high, lazy, long flip and a feather buys a low, fast, snappy one. That is
+  // genuinely what the physics says for a fixed flip count, but it does invert
+  // what "violent" meant: violence is no longer the thing power selects.
+  //
+  // energyRaw is DELIBERATELY LEFT ALONE. It still feeds featureVector, which
+  // drives the farthest-point diversity sampling, so which clips a bake chooses
+  // is unchanged — only the order they are ranked in afterwards. Changing both
+  // would have re-selected the library, which is a re-bake, not a re-rank.
+  //
+  // Ties break on id, as before: apex is a float off a physics sim and two
+  // clips in a cell can be micrometres apart, so the order has to stay
+  // deterministic or the same seed would pick different tellings across bakes.
+  chosen.sort((a, b) => a.diag.apexY - b.diag.apexY || a.id.localeCompare(b.id));
   const n = chosen.length;
   chosen.forEach((c, i) => {
     c.meta.energy = n === 1 ? 0.5 : +(i / (n - 1)).toFixed(4);
