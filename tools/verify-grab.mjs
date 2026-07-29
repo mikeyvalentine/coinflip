@@ -35,6 +35,7 @@ import {
   VEL_FULL_PX_S, VEL_FULL_BAND_SEC, VEL_WINDOW_MS, MIN_THROW_VEL_PX_S,
 } from '../flip3d/grab.js';
 import { MIN_POWER } from '../flip3d/power.js';
+import { MAX_JUMP_PX } from '../flip3d/grab.js';
 import { LIFT, HOLD_SHOT, worldYToScreenY } from '../flip3d/scene.js';
 
 let failures = 0;
@@ -86,7 +87,37 @@ function rig(hooks = {}) {
     advance(ms) { t += ms; },
     get time() { return t; },
     down: (x, y, id) => g._begin(ev(x, y, id)),
-    move: (x, y, id) => g._move(ev(x, y, id)),
+    /**
+     * Move THE WAY A POINTER MOVES — interpolated, never a teleport.
+     *
+     * The rig used to jump straight to the target in one synthetic event, which
+     * is how a live bug survived this entire suite: a single event covering the
+     * whole lift band reads as ~25,000 px/s, so throwing the mouse off the top
+     * of the window was the strongest and easiest throw in the game. The tests
+     * could not see it because they were driving the machine the same way the
+     * bug did. Steps are capped under MAX_JUMP_PX so a stroke here is a stroke.
+     */
+    move(x, y, id, stepSpanMs = 0) {
+      const from = g.pointerY ?? y;
+      const dist = Math.abs(y - from);
+      // Capped at 64 steps. The absurd-input sections deliberately pass 1e9,
+      // and interpolating THAT at a realistic step is twelve million events —
+      // it hung the suite. Beyond this cap the input is not a stroke anyway, so
+      // it is delivered as a single event and lands in the discontinuity path,
+      // which is exactly where a 1e9 jump belongs.
+      const n = Math.min(64, Math.max(1, Math.ceil(dist / (MAX_JUMP_PX * 0.5))));
+      // Advance the clock ACROSS the steps, not before them. Emitting every
+      // sample at one timestamp gives the velocity window zero span, so a
+      // perfectly good throw measures 0 px/s — the rig was making real throws
+      // look like no throw at all.
+      const stepMs = Math.max(1, Math.round(stepSpanMs / n));
+      for (let i = 1; i <= n; i++) {
+        t += stepMs;
+        g._move(ev(x, from + (y - from) * (i / n), id));
+      }
+    },
+    /** Raw single event, for deliberately testing a discontinuity. */
+    jump: (x, y, id) => g._move(ev(x, y, id)),
     up: (x, y, id) => g._finish(ev(x, y, id)),
   };
 }
@@ -594,6 +625,58 @@ console.log('\n=== (11) minPower gates a fumble, but only after the drop test ==
   }
   console.table(floors);
   console.log('  below the floor a release is a fumble, never a limp throw');
+}
+
+// ===========================================================================
+console.log('\n=== FLINGING THE POINTER OFF SCREEN IS NOT A THROW ===');
+{
+  // The live bug. clampY pins the pointer into the lift band, so a fling off
+  // the top of the window arrives as ONE event covering the whole band —
+  // ~25,000 px/s against a full-power threshold of ~2,300. Throwing the mouse
+  // off the screen was the hardest throw available and the easiest to perform,
+  // which made it the correct strategy.
+  //
+  // The suite could not see it because the rig itself teleported: every test
+  // moved in single synthetic jumps, the same shape as the bug.
+  const band = { top: 100, rest: 500 };
+  const mk = (onThrow) => rig({
+    clampY: (y) => Math.min(Math.max(y, band.top), band.rest),
+    travelPx: () => band.rest - band.top,
+    minPower: 0.12, onThrow,
+  });
+
+  const rows = [];
+  // a REAL fast throw: interpolated up-stroke, released inside the frame
+  let real = 0;
+  const a = mk((p) => { real = p; });
+  a.down(200, band.rest);
+  a.move(200, band.top, 1, 100);       // 400 px up over 100 ms - a real flick
+  a.up(200, band.top);
+  rows.push({ gesture: 'fast throw, stays on screen', power: +real.toFixed(3) });
+
+  // the exploit: one event straight off the top of the window
+  let flung = null; let cancelled = null;
+  const b = mk((p) => { flung = p; });
+  b.g.dispose();
+  const c = rig({
+    clampY: (y) => Math.min(Math.max(y, band.top), band.rest),
+    travelPx: () => band.rest - band.top,
+    minPower: 0.12,
+    onThrow: (p) => { flung = p; },
+    onCancel: (r) => { cancelled = r; },
+  });
+  c.down(200, band.rest);
+  c.advance(16);
+  c.jump(200, -3000);            // gone, in a single event
+  c.up(200, -3000);
+  rows.push({ gesture: 'flung off the top (1 event)', power: flung == null ? 'no throw' : +flung.toFixed(3) });
+  console.table(rows);
+
+  ok(flung == null || flung < 0.5,
+    'flinging the pointer off screen still produces a big throw', { flung, cancelled });
+  console.log(`  a real fast throw reads ${real.toFixed(3)}; the fling ${flung == null ? 'does not throw at all' : 'reads ' + flung.toFixed(3)}`);
+  console.log('  a hand cannot teleport, so a jump past MAX_JUMP_PX freezes the stroke');
+  console.log(`  at the last good position rather than banking it (MAX_JUMP_PX = ${MAX_JUMP_PX} px)`);
 }
 
 // ===========================================================================

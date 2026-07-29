@@ -141,6 +141,23 @@ export const VEL_FULL_PX_S = Math.round(PULL_TRAVEL_PX / VEL_FULL_BAND_SEC);
 export const VEL_WINDOW_MS = 60;
 
 /**
+ * Largest pointer jump, in CSS px, that can be part of a throw.
+ *
+ * A HAND cannot teleport; a pointer can. Flick up and off the top of the window
+ * and the pointer leaves in one event — and because clampY pins it to the top of
+ * the lift band, that single event manufactures a FULL-BAND displacement. On a
+ * default canvas that reads as ~25,000 px/s against a full-power threshold of
+ * ~2,300, so throwing the mouse off the screen was the strongest possible throw.
+ * It was also the easiest, which made it the correct strategy.
+ *
+ * 160 px is generous for one event: a fast 4,000 px/s hand covers ~67 px between
+ * frames at 60 Hz, and far less at higher polling rates. Anything past this is a
+ * discontinuity, not a gesture, so the stroke ENDS at the last good position
+ * rather than banking the jump.
+ */
+export const MAX_JUMP_PX = 160;
+
+/**
  * Upward speed, px/s, below which a release is a DROP rather than a throw.
  *
  * Above hand tremor and trackpad noise (which run tens of px/s at most), well
@@ -170,7 +187,7 @@ export const REVERSE_EPS_PX = 4;
  * @param {(info:object)=>void} [hooks.onRearm] the wind-up went stale
  * @param {(power:number, info:object)=>void} [hooks.onThrow]
  * @param {(reason:string, info:object)=>void} [hooks.onCancel] 'dropped',
- *        'below-minimum', 'escape', 'pointercancel'
+ *        'below-minimum', 'escape', 'pointercancel', 'pointer-left'
  * @param {()=>number} [hooks.now] injectable clock, ms
  * @param {number} [hooks.settleMs] ignore measurement for this long after the
  *        grab, while the camera framing transitions. Default 0.
@@ -247,6 +264,8 @@ export function createGrab(el, hooks = {}) {
   let peak = 0;
   let rearmed = false;
   let samples = [];         // {t, y} for the velocity window
+  let lastRawY = null;      // pre-clamp, so a teleport can be spotted at all
+  let jumped = false;       // the pointer discontinued; the stroke is frozen
   let phase = 'wind';       // 'wind' (pulling back) | 'throw' (up-stroke)
   let prevY = 0;            // previous pointerY, for direction inside a throw
   let deepT = 0;            // when the pointer was last at deepY — see upVelocity
@@ -390,6 +409,7 @@ export function createGrab(el, hooks = {}) {
     apexY = pointerY; deepY = pointerY; deepT = now();
     phase = 'wind'; prevY = pointerY;
     samples = [];
+    lastRawY = null; jumped = false;
     restX = pointerX; restY = pointerY;
     restT = now();
     rearmed = true;
@@ -417,6 +437,7 @@ export function createGrab(el, hooks = {}) {
     grabT = restT0;
     power = 0; peak = 0; rearmed = false;
     samples = [{ t: grabT, y }];
+    lastRawY = rawY; jumped = false;
     try { el.setPointerCapture(ev.pointerId); } catch { /* synthetic events in tests */ }
     onGrab(info());
     onChange(0, info());
@@ -443,9 +464,20 @@ export function createGrab(el, hooks = {}) {
    * flick, which is precisely the part the throw is measured on.
    */
   function applyPosition(x, rawY) {
-    // Clamp FIRST, so the idle test, the apex, the pull and the velocity are all
-    // measured on the position the coin actually took. Clamping later would let
-    // un-clamped travel leak into one of them.
+    // A DISCONTINUITY IS NOT A GESTURE. Measured on the RAW position, before
+    // clamping — clamping is exactly what disguises the jump, by folding an
+    // off-screen fling into a legal-looking full-band sweep. Past the threshold
+    // the pointer is treated as gone: the stroke freezes at the last good
+    // position and nothing about the jump reaches the velocity estimate.
+    if (jumped) { lastRawY = rawY; return; }   // stroke is over; nothing re-opens it
+    if (lastRawY != null && Math.abs(rawY - lastRawY) > MAX_JUMP_PX) {
+      lastRawY = rawY;
+      jumped = true;
+      return;
+    }
+    lastRawY = rawY;
+    // Clamp, so the idle test, the apex, the pull and the velocity are all
+    // measured on the position the coin actually took.
     const y = clampY(rawY);
     const moved = Math.hypot(x - restX, y - restY) > idleEpsPx;
     pointerX = x; pointerY = y;
@@ -489,6 +521,17 @@ export function createGrab(el, hooks = {}) {
 
   function finish(ev) {
     if (!held || ev.pointerId !== pointerId) return;
+    // THE POINTER LEFT, so whatever comes back is not the end of a throw. Freezing
+    // the stroke was not enough on its own: the release arrives at the SAME
+    // out-of-range coordinate the jump did, so the jump test sees no movement,
+    // waves it through, and clampY folds it back into a full-band sweep — the
+    // exploit, restored by the very event that ends the gesture.
+    if (jumped) {
+      const snapshot = info();
+      end();
+      onCancel('pointer-left', snapshot);
+      return;
+    }
     // The release position is part of the throw — see applyPosition.
     if (Number.isFinite(ev.clientX) && Number.isFinite(ev.clientY)) {
       applyPosition(ev.clientX, ev.clientY);

@@ -185,3 +185,33 @@ render();
 const out = path.join(HERE, 'clean-demo.html');
 await fs.writeFile(out, page, 'utf8');
 console.log(`wrote ${out} (${(page.length / 1024).toFixed(1)} kB, clean.js inlined)`);
+
+// --- and into the game itself ----------------------------------------------
+// coinflip-preview.html is hand-edited constantly, so it cannot be generated
+// wholesale like the demo. Only the marked block is replaced; everything around
+// it is left exactly as found. Same source, same strip, one place that knows how.
+const PREVIEW = path.join(HERE, '..', 'coinflip-preview.html');
+const BEGIN = '// ===== BEGIN inlined minigame/clean.js — GENERATED, DO NOT EDIT HERE =====';
+const END = '// ===== END inlined minigame/clean.js =====';
+
+const preview = await fs.readFile(PREVIEW, 'utf8');
+const i = preview.indexOf(BEGIN);
+const j = preview.indexOf(END);
+if (i < 0 || j < 0 || j < i) {
+  throw new Error('coinflip-preview.html is missing the inline markers — refusing to guess where the block goes');
+}
+
+const header = [
+  BEGIN,
+  '// Written by `node minigame/build-demo.mjs`. Edit minigame/clean.js and re-run.',
+  '//',
+  '// This file has to stay a single self-contained page with no imports (it is',
+  '// published as a standalone artifact), and the payout rule has to live in ONE',
+  '// place because it is the game\'s only money faucet. A hand-maintained copy would',
+  '// satisfy the first and quietly break the second. tools/verify-clean.mjs',
+  '// evaluates THIS block and the module side by side and fails on any divergence.',
+].join('\n');
+
+const rebuilt = preview.slice(0, i) + header + '\n\n' + logic + '\n' + preview.slice(j);
+await fs.writeFile(PREVIEW, rebuilt, 'utf8');
+console.log(`updated ${PREVIEW} (inlined block refreshed, ${(logic.length / 1024).toFixed(1)} kB)`);

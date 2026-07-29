@@ -331,5 +331,195 @@ console.log('\n=== (7) state machine housekeeping ===');
   console.log('  the clock starts on the first scrub, so an idle coin never times out');
 }
 
+// ===========================================================================
+// Everything above tests the MODULE. Everything below tests the module as it is
+// actually wired into the game — a different thing, and the only one a player
+// ever touches.
+// ===========================================================================
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/** Load coinflip-preview.html's module against a DOM stub and hand back its guts. */
+async function loadPreview() {
+  const mk = () => {
+    const cls = new Set();
+    const e = {
+      classList: {
+        add: (...c) => c.forEach((x) => cls.add(x)),
+        remove: (...c) => c.forEach((x) => cls.delete(x)),
+        toggle: (c, f) => (f === undefined ? (cls.has(c) ? cls.delete(c) : cls.add(c)) : (f ? cls.add(c) : cls.delete(c))),
+        contains: (c) => cls.has(c),
+      },
+      style: {}, dataset: {}, value: '', textContent: '', innerHTML: '',
+      placeholder: '', max: 0, offsetLeft: 0, offsetTop: 0, width: 0, height: 0,
+      addEventListener() {}, removeEventListener() {}, prepend() {}, blur() {}, focus() {},
+      setAttribute() {}, getAttribute: () => null, appendChild() {}, remove() {},
+      setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 260, height: 260 }),
+      closest() { return e; }, querySelector() { return e; }, querySelectorAll: () => [],
+    };
+    return e;
+  };
+  const sh = mk();
+  globalThis.document = {
+    querySelector: () => sh, querySelectorAll: () => [], createElement: mk,
+    body: sh, addEventListener() {},
+  };
+  globalThis.window = { addEventListener() {}, removeEventListener() {} };
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.performance = { now: () => 0 };
+  globalThis.setInterval = () => 0;
+  globalThis.requestAnimationFrame = () => 0;
+
+  const html = await fs.readFile(path.join(ROOT, 'coinflip-preview.html'), 'utf8');
+  const body = /<script type="module">([\s\S]*?)<\/script>/.exec(html)[1];
+  const probe = [
+    'globalThis.__G = {',
+    '  get player(){ return player; }, set player(v){ player = v; },',
+    '  get clean(){ return clean; }, set clean(v){ clean = v; },',
+    '  get day(){ return day; }, set day(v){ day = v; },',
+    '  set timerEnd(v){ timerEnd = v; },',
+    '  startClean, canClean, cleanPayout, refresh, timerRunning,',
+    '  createClean, payoutFor, makeDirt, CLEAN_ENOUGH, PAYOUT_MIN, PAYOUT_MAX, HARD_CAP_MS,',
+    '};',
+  ].join('\n');
+  const tmp = path.join(ROOT, '_clean_probe.mjs');
+  await fs.writeFile(tmp, body + '\n' + probe, 'utf8');
+  await import('file://' + tmp.split(path.sep).join('/'));
+  await fs.unlink(tmp);
+  return globalThis.__G;
+}
+
+const G = await loadPreview();
+
+console.log('\n=== (8) THE INLINED COPY CANNOT DRIFT FROM THE MODULE ===');
+{
+  // The page is self-contained by requirement, so clean.js is copied into it.
+  // A copy that drifts on the game's ONLY money faucet pays the wrong amount
+  // forever and nothing goes red. This compares the two implementations
+  // directly rather than trusting the build step that made them.
+  let worstPay = 0;
+  for (let i = 0; i <= 2000; i++) {
+    const c = i / 2000;
+    const a = payoutFor(c); const b = G.payoutFor(c);
+    worstPay = Math.max(worstPay, Math.abs(a - b));
+  }
+  ok(worstPay === 0, 'the inlined payoutFor disagrees with the module', { worstPay });
+
+  ok(G.PAYOUT_MIN === PAYOUT_MIN && G.PAYOUT_MAX === PAYOUT_MAX
+     && G.CLEAN_ENOUGH === CLEAN_ENOUGH && G.HARD_CAP_MS === HARD_CAP_MS,
+  'an inlined constant drifted from the module',
+  { inlined: [G.PAYOUT_MIN, G.PAYOUT_MAX, G.CLEAN_ENOUGH, G.HARD_CAP_MS],
+    module: [PAYOUT_MIN, PAYOUT_MAX, CLEAN_ENOUGH, HARD_CAP_MS] });
+
+  // same seed must give byte-identical dirt, or the two are different games
+  let cells = 0; let bad = 0;
+  for (const seed of [1, 7, 99, 12345, -3]) {
+    const a = makeDirt(seed); const b = G.makeDirt(seed);
+    if (a.grid !== b.grid || a.discCells !== b.discCells) { bad++; continue; }
+    for (let k = 0; k < a.dirt.length; k++) { cells++; if (a.dirt[k] !== b.dirt[k]) bad++; }
+  }
+  ok(bad === 0, 'the inlined dirt generator diverges from the module', { bad, cells });
+  console.log(`  2001 payout inputs, 0 mismatches; ${cells} dirt cells over 5 seeds, ${bad} mismatches`);
+}
+
+console.log('\n=== (9) bust -> scrub -> back in the game ===');
+{
+  const raster2 = (c) => {
+    for (let y = -1; y <= 1.0001; y += BRUSH_RADIUS * 0.6) {
+      for (let s = 0; s <= 40; s++) c.scrubTo(-1.05 + 2.1 * (s / 40), y);
+      c.lift();
+      if (c.done) return;
+    }
+  };
+  G.player = { balance: 0, bank: 0, history: [] };
+  G.day = 0;
+  G.timerEnd = 0;                                  // cooldown not running
+  G.startClean();
+  ok(G.clean != null, 'no scrub was started on the broke screen');
+  ok(G.canClean(), 'cleaning is refused at 0 B with the timer at 00');
+
+  raster2(G.clean);
+  ok(G.clean.done, 'a full raster did not finish the clean');
+  const paid = G.clean.payout;
+  await G.cleanPayout();
+
+  ok(G.player.balance >= PAYOUT_MIN && G.player.balance <= PAYOUT_MAX,
+    'the payout landed outside the band', { balance: G.player.balance });
+  ok(G.player.balance === paid, 'the wallet did not receive the locked payout',
+    { balance: G.player.balance, paid });
+  ok(G.player.bank === 0, 'the payout went to the BANK — it must be riskable');
+  ok(G.player.history.length === 1, 'the clean did not consume a day',
+    { days: G.player.history.length });
+  ok(G.player.history[0].kind !== 'broke', 'the old broke-flip record shape survived');
+  ok(!G.canClean(), 'still cleanable after being paid — the faucet is open');
+  console.log(`  0 B -> full clean -> ${G.player.balance} B in the WALLET, 1 day spent, board restored`);
+}
+
+console.log('\n=== (10) nobody is ever stranded ===');
+{
+  // The failure this exists to prevent: a player who cannot or does not finish
+  // is left at 0 B with the real game permanently out of reach. Walking away
+  // mid-scrub must still pay, and the hard cap is what makes that true.
+  let t = 1000;
+  G.player = { balance: 0, bank: 0, history: [] };
+  G.day = 0; G.timerEnd = 0;
+  G.clean = G.createClean({ seed: 42, now: () => t });
+
+  G.clean.scrubTo(0, 0);                           // one touch, then walk away
+  t += HARD_CAP_MS + 1;
+  ok(G.clean.tick(), 'the hard cap never fired on an abandoned scrub');
+  await G.cleanPayout();
+  ok(G.player.balance >= PAYOUT_MIN,
+    'an abandoned scrub stranded the player at 0 B', { balance: G.player.balance });
+  console.log(`  one touch then abandoned -> ${G.player.balance} B, never stranded`);
+
+  // and the extreme: the coin is never touched at all
+  t = 1000;
+  G.player = { balance: 0, bank: 0, history: [] };
+  G.day = 0; G.timerEnd = 0;
+  G.clean = G.createClean({ seed: 7, now: () => t });
+  t += HARD_CAP_MS * 5;
+  G.clean.tick();
+  // untouched, the clock never started, so the cap cannot fire — the player is
+  // still ON the broke screen with the coin in front of them, which is correct.
+  // What must NOT happen is a payout of 0 if they then finish.
+  G.clean.finish();
+  await G.cleanPayout();
+  ok(G.player.balance >= PAYOUT_MIN,
+    'finishing an untouched coin paid nothing', { balance: G.player.balance });
+  console.log(`  never touched, then finished -> ${G.player.balance} B (floor is ${PAYOUT_MIN})`);
+}
+
+console.log('\n=== (11) the daily-flip gate holds in LOGIC ===');
+{
+  // Cleaning IS the daily flip. The rule implemented: you cannot clean while
+  // the cooldown timer runs, which is the same gate doFlip() uses. Enforced in
+  // canClean() rather than by CSS, because pointer-events:none stops a mouse
+  // and not a synthetic event — a real bank-during-flip bug came from exactly
+  // that mistake.
+  G.player = { balance: 0, bank: 0, history: [] };
+  G.day = 0;
+  G.timerEnd = Date.now() + 60000;                 // cooldown running
+  ok(!G.canClean(), 'cleaning is allowed while the cooldown runs');
+
+  G.startClean();
+  for (let s = 0; s <= 40; s++) G.clean.scrubTo(-1 + 2 * (s / 40), 0);
+  G.clean.finish();
+  await G.cleanPayout();
+  ok(G.player.balance === 0, 'a clean paid out while the cooldown was running',
+    { balance: G.player.balance });
+  ok(G.player.history.length === 0, 'a gated clean still spent a day');
+  console.log('  cooldown running: the scrub cannot pay, and cannot spend the day');
+
+  // with money in the wallet, cleaning is not available at all
+  G.player = { balance: 100, bank: 0, history: [] };
+  G.timerEnd = 0;
+  ok(!G.canClean(), 'cleaning is available to a player who is not broke');
+  console.log('  wallet above 0: busker mode is unreachable, so it cannot be farmed');
+}
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);
