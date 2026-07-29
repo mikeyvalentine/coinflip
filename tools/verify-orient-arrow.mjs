@@ -460,10 +460,16 @@ console.log('\n=== (9) the view paints a dial, and writes its state where a hidd
   ok(landed.length === 1, 'not exactly one sector is marked landed', { n: landed.length });
   ok(sectors.indexOf(landed[0]) === st.quadrantIndex,
     'the wrong sector is filled', { filled: sectors.indexOf(landed[0]), want: st.quadrantIndex });
+  // THE SECTORS ARE NO LONGER SHADED. Filling three quadrants you did not land
+  // in washed over most of the coin's face, which is the thing the guide exists
+  // to help you read. What must still hold is that the landed sector is
+  // IDENTIFIED — the information survives in the dataset even though the fill
+  // is gone — and that nothing paints over the face.
   const alphas = sectors.map((q) => parseFloat(q.getAttribute('fill-opacity')));
-  ok(alphas.filter((a) => a === SECTOR_ALPHA.landed).length === 1
-     && alphas.filter((a) => a === SECTOR_ALPHA.idle).length === 3,
-    'the sector alphas are not one landed and three idle', { alphas });
+  ok(alphas.every((a) => a === 0),
+    'a sector is being painted over the coin face', { alphas });
+  ok(sectors.filter((q) => q.dataset.landed === '1').length === 1,
+    'the landed sector is no longer identifiable now that the fill is gone');
   ok(SECTOR_ALPHA.landed < 0.5 && SECTOR_ALPHA.idle < 0.2,
     'the dial is too opaque — the coin face must read through it', { SECTOR_ALPHA });
   console.log('  four sectors, alpha ' + SECTOR_ALPHA.idle + ' idle / ' + SECTOR_ALPHA.landed + ' landed');

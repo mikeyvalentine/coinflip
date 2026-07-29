@@ -392,6 +392,12 @@ window.addEventListener('resize', () => {
 
 $('#again').addEventListener('click', async () => {
   $('#again').style.display = 'none';
+  // Clear the reading BEFORE re-arming. hide() only ran at the start of the
+  // next flip, so between reset and the next throw the dial sat there at the
+  // pixels it was drawn at — while arm() moved the camera back to the ready
+  // shot underneath it. A stale overlay that no longer registers with the coin
+  // reads as the dial being broken, not as the dial being old.
+  orientArrow.hide();
   await arm();
 });
 

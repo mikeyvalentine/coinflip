@@ -156,7 +156,13 @@ export const ARROW_COLOUR = '#ffc300';
  * The landed sector is roughly three times the others, which is the whole signal:
  * "this one" has to be readable at a glance without any legend.
  */
-export const SECTOR_ALPHA = { idle: 0.10, landed: 0.32 };
+// The sectors are NOT filled any more. Shading three quadrants you did not land
+// in put a wash over most of the coin's face, and the face is what the dial is
+// supposed to be helping you read — the guide was competing with the thing it
+// annotates. The dividing lines carry the buckets on their own, and the rim
+// tick already says which one won. Kept as a named constant rather than deleted
+// so the intent is on the record: 0 is a decision, an absent property is a bug.
+export const SECTOR_ALPHA = { idle: 0, landed: 0 };
 
 /**
  * A world heading -> its on-screen rotation, in degrees clockwise from
@@ -499,16 +505,12 @@ export function createOrientArrow(hostEl, opts = {}) {
   spokes.setAttribute('opacity', '0.45');
   svg.appendChild(spokes);
 
-  const rim = doc.createElementNS(NS, 'circle');
-  rim.setAttribute('cx', String(DIAL_R));
-  rim.setAttribute('cy', String(DIAL_R));
-  rim.setAttribute('r', String(DIAL_R));
-  rim.setAttribute('fill', 'none');
-  rim.setAttribute('stroke', colour);
-  rim.setAttribute('stroke-width', '2');
-  rim.setAttribute('opacity', '0.75');
-  svg.appendChild(rim);
-
+  // NO RIM CIRCLE. It traced the coin's own edge, so it was a second outline
+  // drawn on top of an outline the render already provides — and any error in
+  // the registration showed up as a visible double edge, making a correct
+  // overlay look wrong. The coin draws its own silhouette; the guide only needs
+  // to add what the coin cannot say for itself, which is where the buckets
+  // divide and where 12 o'clock ended up.
   // the 12 o'clock marker: a triangle sitting on the rim at the settled bearing,
   // drawn in plane coordinates like everything else so it lies on the face too
   const tick = doc.createElementNS(NS, 'path');
@@ -523,13 +525,19 @@ export function createOrientArrow(hostEl, opts = {}) {
 
   /** The 12-o'clock triangle, in local dial units, pointing inward at the rim. */
   function tickPath(deg) {
+    // OUTSIDE the rim, apex pointing IN at it. It used to sit inside, which put
+    // it on the coin's face — covering the engraving at exactly the bearing the
+    // player is trying to read, and making it ambiguous whether the triangle
+    // marked the rim or some point within the disc. Outside, the coin's face
+    // stays clear and the apex does the pointing.
     const half = 9;                        // half-width at the base, dial units
-    const depth = 26;                      // how far in from the rim the apex sits
+    const reach = 26;                      // how far OUT from the rim the base sits
     const t = normDeg(deg) * DEG;
     const ux = Math.sin(t), uy = -Math.cos(t);          // outward radial
     const px = -uy, py = ux;                            // tangent
-    const bx = DIAL_R + ux * DIAL_R, by = DIAL_R + uy * DIAL_R;
-    const ax = DIAL_R + ux * (DIAL_R - depth), ay = DIAL_R + uy * (DIAL_R - depth);
+    // apex ON the rim, base out beyond it
+    const ax = DIAL_R + ux * DIAL_R, ay = DIAL_R + uy * DIAL_R;
+    const bx = DIAL_R + ux * (DIAL_R + reach), by = DIAL_R + uy * (DIAL_R + reach);
     return `M ${bx + px * half} ${by + py * half} L ${bx - px * half} ${by - py * half} `
          + `L ${ax} ${ay} Z`;
   }
