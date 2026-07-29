@@ -136,10 +136,33 @@ try {
   console.warn('[flip3d] no baked clip library, procedural fallback only:', err.message);
 }
 
-const scene = await createScene({
-  canvas,
-  onProgress: (s) => { $('#status').textContent = s === 'ready' ? '' : 'loading ' + s + '…'; },
-});
+// A fatal failure here used to leave the page sitting on "loading clips…"
+// forever, because the throw happened before anything else could update the
+// status. An infinite spinner is the worst way to report a hard error: it looks
+// like a slow network and invites the player to keep waiting for something that
+// is never going to arrive. The commonest cause is not a bug at all — WebGL
+// disabled in the browser (Firefox's privacy.resistFingerprinting turns it off,
+// as do several blocker extensions), which nothing in this page can fix but the
+// player can, in seconds, once they are told.
+let scene;
+try {
+  scene = await createScene({
+    canvas,
+    onProgress: (s) => { $('#status').textContent = s === 'ready' ? '' : 'loading ' + s + '…'; },
+  });
+} catch (err) {
+  const webgl = /webgl|context/i.test(String(err && err.message));
+  canvas.style.display = 'none';
+  $('#status').innerHTML = webgl
+    ? '<b>WebGL is disabled in this browser</b>, so the coin cannot be drawn.<br>'
+      + 'Firefox: check for a permission prompt in the address bar, or set '
+      + '<code>webgl.disabled = false</code> in <code>about:config</code>. '
+      + '<code>privacy.resistFingerprinting</code> also disables WebGL.<br>'
+      + 'Blocker extensions (NoScript, some privacy add-ons) block it too.'
+    : '<b>The 3D scene failed to load.</b><br>' + String(err && err.message || err);
+  console.error('[flip3d] scene creation failed', err);
+  throw err;   // stop here; nothing below can work without a renderer
+}
 
 const blur = createMotionBlur(scene, { quality: BLUR_QUALITY });
 scene.setDrawHook(blur.draw);
