@@ -153,7 +153,15 @@ Each placed bet resolves step by step down the form. The **running total lives I
 ## 5. WHAT IS ACTUALLY PENDING
 
 **Blocking the merge**
-1. **The Edge is baked but wiring is IN FLIGHT.** 12 verified rim clips in `bake/out-edge/`. `outcome.js` hard-codes `edge: false`, `library.js` does not know about them, `contract.js#assertOutcome` rejects `side:'Edge'`. Watch `bake/encode.js` — it assumes a FLAT final frame for its verbatim-last-frame trick and edge clips end at ~90° tilt.
+1. ~~The Edge~~ — **DONE.** Wired end to end. `outcome.js` draws the rim at 1/500 off its own hash; measured **0.1850% over 60,000 seeds** (expected 0.2000%, 0.82σ, and independent of the spin draw at χ²=22.5/32). `assertOutcome` accepts `side:'Edge'` with nulled bet axes; `library.js` routes to `bake/out-edge/` automatically. **8,000 seeds: 0 of 7,981 non-Edge outcomes moved** — the rim is an override folded in at the end, not a reordering of the draw.
+
+   **Three traps found while wiring it, all of which would have shipped silently:**
+   - `materialise()` lifts every clip so its settled centre sits at half the coin's THICKNESS — a sub-mm correction for solver drift on a FLAT landing. A rim clip's centre legitimately sits at the coin's RADIUS (9.88 mm vs 0.75 mm), so applying it drove the coin **9 mm through the table** on the most dramatic outcome in the game. Now skipped for edges.
+   - The tails re-frame would have renamed `'Edge'` → `'Heads'`, so a rim clip would have been verified and reported as a face landing.
+   - **Edge clips are deliberately NOT packed.** `encode.js` stores `quadrant` as a UInt8 index (null → -1 → throws) and `orientationDeg` as a float (null → **0**, which decodes as a valid-looking 0.00° in the NE bucket — a rim landing silently becoming a face landing). Teaching the format a null sentinel is a version bump for 12 clips out of 1,036, and only the 9.5 kB index loads up front. They stay raw JSON.
+
+   Note the two builds differ in SHAPE on an Edge, deliberately: the preview leaves `side`/`spins`/`quadrant` populated and lets `edge:true` sweep them at settlement; the renderer nulls them, because they feed `assertOutcome` and then a rim clip that has no side, no rotation count and no settled yaw.
+
 2. **The 2D/3D merge.** The two builds have never talked to each other and there are TWO implementations of the outcome draw. `tools/verify-draw-parity.mjs` is the gate: `startFace`/`spins`/`side` already agree exactly; the quadrant divergence is two independent FAIR draws disagreeing (both uniform, χ² 3.29 and 6.11), so picking either loses nothing.
 
 **Decisions, not tasks**
