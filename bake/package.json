@@ -1,0 +1,10 @@
+{
+  "name": "coinflip-bake",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "COINFLIP Phase 0 - offline Rapier bake harness (deterministic clip library)",
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.19.3"
+  }
+}

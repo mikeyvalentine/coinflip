@@ -1,0 +1,69 @@
+# COINFLIP backend — Cloudflare Worker + D1.
+# Secrets are NOT here. Local: .dev.vars (gitignored). Deployed: wrangler secret put.
+name = "coinflip-api"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+# Local dev listens on 8788 (8787 and 8901 are taken on this machine).
+[dev]
+port = 8788
+local_protocol = "http"
+
+# Non-secret configuration. Safe to commit.
+[vars]
+ENVIRONMENT = "development"
+# Browser origins allowed to call the API with credentials. Comma separated.
+ALLOWED_ORIGINS = "http://localhost:8788,http://127.0.0.1:8788,http://localhost:5173,http://localhost:3000"
+# Session cookie lifetime (seconds). Short-lived; silently renewed on use.
+SESSION_TTL_SECONDS = "3600"
+# How long a leaderboard/population snapshot is served before recompute.
+STATS_TTL_SECONDS = "300"
+# Legacy localStorage import: trust the client's claimed balance/bank?
+# "false" (default, correct) imports history as provenance only and leaves money
+# server-authoritative. Flip to "true" ONLY for a one-off prototype migration.
+ALLOW_LEGACY_BALANCE_IMPORT = "false"
+# Hard cap applied if the above is ever "true".
+LEGACY_IMPORT_CAP = "100000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "coinflip"
+# REPLACE with the uuid printed by `wrangler d1 create coinflip` (DEPLOYMENT.md §3).
+# Local `wrangler dev` ignores this value and uses .wrangler/state.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Precompute leaderboard + population aggregates so no player request pays for
+# a full table scan. Cheap: one pass every 5 minutes.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Production overrides. `wrangler deploy --env production`.
+# Create the D1 database + secrets for this env before deploying (DEPLOYMENT.md).
+# ---------------------------------------------------------------------------
+[env.production]
+name = "coinflip-api-production"
+
+[env.production.vars]
+ENVIRONMENT = "production"
+ALLOWED_ORIGINS = "https://REPLACE-WITH-YOUR-GAME-ORIGIN"
+SESSION_TTL_SECONDS = "3600"
+STATS_TTL_SECONDS = "300"
+ALLOW_LEGACY_BALANCE_IMPORT = "false"
+LEGACY_IMPORT_CAP = "100000"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "coinflip"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[env.production.triggers]
+crons = ["*/5 * * * *"]
+
+[env.production.observability]
+enabled = true

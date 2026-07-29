@@ -1,0 +1,19 @@
+# SECRETS — never commit. Real values live in .dev.vars (local) and
+# `wrangler secret put` (deployed). See ../DEPLOYMENT.md.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+*.pem
+*.key
+client_secret*.json
+
+# wrangler local state (includes the local D1 sqlite file)
+.wrangler/
+node_modules/
+dist/
+.env
+.env.*
+
+# test artifacts
+test-results/
+*.log

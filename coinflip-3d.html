@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COINFLIP — 3D</title>
+<script>
+  // The preview pane can be hidden, and a hidden pane never fires rAF. Opt in
+  // to a timer-driven rAF with ?raf=timer so playback can be driven headlessly.
+  if (new URLSearchParams(location.search).get('raf') === 'timer') {
+    window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
+    window.cancelAnimationFrame = (id) => clearTimeout(id);
+  }
+</script>
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: "Google Sans", "Google Sans Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; padding: 40px 24px; color: #111; background: #fff;
+  }
+  #wrap { max-width: 880px; margin: 0 auto; }
+  #stage { position: relative; width: 100%; border-radius: 2px; overflow: hidden; background: #111; }
+  canvas { display: block; width: 100%; height: auto; cursor: grab; touch-action: none; }
+  canvas.locked { cursor: default; }
+  canvas.charging { cursor: grabbing; }
+
+  /* POWER METER.
+     No transitions, anywhere, on purpose: the preview pane is usually hidden,
+     and a hidden pane never advances a CSS transition — getComputedStyle would
+     keep reporting the start value and any measurement taken off this element
+     would be a lie. Every visual here is written directly by grab.js on each
+     pointermove, so the DOM always states the truth. */
+  #meter {
+    position: absolute; right: 14px; bottom: 14px; width: 74px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    user-select: none; pointer-events: none;
+  }
+  #meter .pm-track {
+    position: relative; width: 12px; height: 128px; border-radius: 6px;
+    background: rgba(255,255,255,.16); overflow: hidden;
+  }
+  #meter .pm-fill {
+    position: absolute; left: 0; bottom: 0; width: 100%; height: 0%;
+    background: #6b7280; border-radius: 6px;
+  }
+  #meter .pm-min {
+    position: absolute; left: 0; width: 100%; height: 1px;
+    background: rgba(255,255,255,.55);
+  }
+  #meter .pm-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .02em;
+    color: #6b7280; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  }
+  #bar { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; }
+  #shown { color: #9a9a9a; }
+  #shown b { color: #111; font-weight: 700; }
+  #spinCounter { font-weight: 700; font-variant-numeric: tabular-nums; }
+  #out { margin-top: 10px; min-height: 1.4em; }
+  #out b { font-weight: 700; }
+  #status { color: #9a9a9a; margin-top: 10px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage"><canvas id="c"></canvas><div id="meter"></div></div>
+  <div id="bar">
+    <div id="shown"></div>
+    <div id="spinCounter">spin: 0.0</div>
+    <div id="orient"></div>
+  </div>
+  <div id="out"></div>
+  <div id="status">loading…</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+
+<script type="module">
+import { createScene } from './flip3d/scene.js';
+import { createFlipper } from './flip3d/player.js';
+import { resolveFlip, sha } from './flip3d/outcome.js';
+import { loadClipLibrary } from './flip3d/library.js';
+import { buildProceduralClip, verifyClip, analyzeClip } from './flip3d/clip.js';
+import {
+  spinLabel, SPIN_VALUES, expectedSide, quadrantFromOrientation,
+  orientationFromQuat, restQuatForFace, REST_ORIENTATION_DEG, ORIENT_TOL_DEG,
+} from './flip3d/contract.js';
+import { createMotionBlur, QUALITY } from './flip3d/blur.js';
+// createCharge is retired — grab.js replaces it. createMeterView is not: the
+// meter reads a 0..1 power and does not care how the power was made.
+import { createMeterView } from './flip3d/charge.js';
+import { createGrab } from './flip3d/grab.js';
+import { createOrientArrow } from './flip3d/orientArrow.js';
+import { playDrop } from './flip3d/drop.js';
+import { LIFT, worldYToScreenY } from './flip3d/scene.js';
+import { throwProfile, outcomeBand, POWER_NARROWS_BAND, MIN_POWER } from './flip3d/power.js';
+import { selectVariant, targetEnergy } from './flip3d/variant.js';
+
+const $ = (s) => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+// The baked library is the default. ?procedural=1 forces the fallback.
+//
+// ?slowmo=0 turns OFF the §6.4 apex ramp — slow motion + camera push-in from
+// the apex to first contact. It is ON by default: at 1x the whole descent is
+// ~300 ms and the coin is a strobe, so there is nothing to watch and nothing to
+// feel. The ramp is anchored to the APEX, not to the whole flight, which is the
+// difference between a replay and the floaty 2x stretch that was rejected.
+// ?bullet=1 is the old spelling and still forces it on.
+const FORCE_PROCEDURAL = params.get('procedural') === '1';
+const SLOWMO = params.get('bullet') === '1' || params.get('slowmo') !== '0';
+// ?blur=off|low|medium|high — see flip3d/blur.js. Default medium, auto-degrading.
+const BLUR_QUALITY = QUALITY[params.get('blur')] ? params.get('blur') : 'medium';
+// The 3D page has no bet history, so daringness sits at its cold-start neutral.
+const DARINGNESS = Number(params.get('daring') ?? 0.5);
+
+const canvas = $('#c');
+let flipNo = 0;
+let dropping = false;      // a drop is running: the coin is not grabbable
+let pending = null;          // the next flip, already decided, face shown
+let locked = true;
+
+const nextSeed = () => params.get('seed') ? `${params.get('seed')}::${flipNo}` : `3d::${Date.now()}::${flipNo}`;
+
+$('#status').textContent = 'loading clips…';
+let library = null;
+try {
+  library = await loadClipLibrary({ base: params.get('clips') ?? './bake/out/' });
+  console.log('[flip3d] clip library', library.stats);
+} catch (err) {
+  console.warn('[flip3d] no baked clip library, procedural fallback only:', err.message);
+}
+
+const scene = await createScene({
+  canvas,
+  onProgress: (s) => { $('#status').textContent = s === 'ready' ? '' : 'loading ' + s + '…'; },
+});
+
+const blur = createMotionBlur(scene, { quality: BLUR_QUALITY });
+scene.setDrawHook(blur.draw);
+
+// BEAT TAGS. The spin counter is a bet axis, and deriving it by watching the
+// coin cross the horizon welds it to the frame data — decimate the track to
+// 60fps and 281 of 1024 clips report a WRONG count, silently, on a bet already
+// paid out. These are the recorded crossing times, so the count is exact at any
+// framerate and survives the compression work. 105 KB, 0.52% of the library.
+// Optional by design: absent, the player falls back to counting frames.
+let beats = null;
+try {
+  const r = await fetch((params.get('clips') ?? './bake/out/') + 'beats.json');
+  if (r.ok) beats = await r.json();
+} catch { /* no sidecar — the frame-counting fallback is correct, just weldier */ }
+if (!beats) console.warn('[flip3d] no beats.json; spin counter falls back to frame counting');
+
+const flipper = createFlipper(scene, {
+  library, blur, beats,
+  onSpin: (rotations) => { $('#spinCounter').textContent = 'spin: ' + rotations.toFixed(1); },
+  onPhase: (p) => { canvas.dataset.phase = p; },
+});
+
+const meter = createMeterView($('#meter'));
+meter.reset();
+
+// The orientation helper: a small yellow arrow pointing the way the coin's face
+// ended up, with the angle to two decimals. It appears when the coin SETTLES —
+// it is the answer to "did my quadrant land", so showing it any earlier would be
+// answering before the question is asked. It reads
+// report.played.landedOrientationDeg, the same value the renderer verifies
+// against the clip twice per flip, so the two cannot disagree.
+const orientArrow = createOrientArrow($('#orient'));
+
+const playOpts = () => ({ forceProcedural: FORCE_PROCEDURAL, slowmo: SLOWMO });
+
+let pendingSeedHex = null;
+
+async function arm() {
+  // ======================================================================
+  // THE OUTCOME DRAW. Power is NOT an argument here and must not become one.
+  // ======================================================================
+  // outcomeBand() is the seam: it returns the full 32-value ladder today, so
+  // this call is bit-for-bit the pre-power draw. When power is allowed to
+  // narrow the reachable spin counts, the band is what changes — and the odds
+  // change with it, which is why it is inert. See flip3d/power.js#THE SEAM.
+  const band = outcomeBand(SPIN_VALUES, /* power */ null);
+  pending = await resolveFlip(nextSeed(), FORCE_PROCEDURAL ? null : library, { band });
+  pendingSeedHex = await sha(nextSeed());
+  await flipper.ready(pending.startFace);
+  $('#shown').innerHTML = 'shown <b>' + pending.startFace + '</b>';
+  // The pull picks the variant at RELEASE, so the whole cell is warmed, not the
+  // one clip the arm-time draw happened to name.
+  if (library && !FORCE_PROCEDURAL) library.prefetch(pending);
+  locked = false;
+  canvas.classList.remove('locked');
+  meter.reset();
+}
+
+async function flip(power = 0.5, fromPose = null) {
+  if (locked || flipper.busy) return;
+  locked = true;
+  canvas.classList.add('locked');
+  $('#out').textContent = '';
+  // Clear the previous reading HERE and not in arm(): arm() runs immediately
+  // after this flip resolves, to set up the next one, so hiding there would
+  // erase the arrow in the same breath as showing it. The reading stays up
+  // until the player actually starts their next throw.
+  orientArrow.hide();
+  const outcome = pending;
+  const report = await flipper.playFlip(outcome, {
+    ...playOpts(),
+    // Where the coin was let go. The lead-in bridges from HERE up to the clip's
+    // 0.22 m release point instead of from the table, so the throw continues the
+    // player's own motion rather than restarting it. The lift ceiling is 0.032 m
+    // and the bridge needs 0.0184 m, so there is 10x margin and the degenerate
+    // "released above the clip" branch is unreachable in play.
+    fromPose,
+    seed: nextSeed(),
+    // POWER. It reaches exactly three things: the lead-in, the camera, and
+    // selectVariant's flickForce. It is not an input to the draw above.
+    power,
+    seedHex: pendingSeedHex,
+    daringness: DARINGNESS,
+  });
+  const p = report.played;
+  const r = report.resolvedOutcome;
+  $('#out').innerHTML =
+    `shown <b>${outcome.startFace}</b> → landed <b>${p.landedFace}</b>, ` +
+    `spin: <b>${spinLabel(report.meta.halfFlips)}</b>, ` +
+    `orientation: <b>${p.landedOrientationDeg.toFixed(2)}°</b> (<b>${p.landedQuadrant}</b>)`;
+  $('#status').textContent =
+    `${report.source} · ${report.clipId ?? '—'} · ${report.timing.wallSec.toFixed(2)}s · ` +
+    `power ${(power * 100).toFixed(0)}% → energy ${r.energy ?? '—'} · ` +
+    `lead-in ${report.throw.leadInMs.toFixed(0)}ms · blur ${blur.stats.quality}` +
+    (blur.fallbackReason ? ' (FALLBACK)' : '');
+  if (!report.pass) {
+    $('#out').innerHTML += ' — <b style="color:#c00">MISMATCH</b>';
+    console.error('[flip3d] verification failed', report);
+  }
+  orientArrow.show(p.landedOrientationDeg);
+  console.log('[flip3d] flip', ++flipNo, report.pass ? 'OK' : 'FAILED', report);
+  await arm();
+  return report;
+}
+
+// --- the gesture -----------------------------------------------------------
+// PICK THE COIN UP, wind up, release. See flip3d/grab.js for the state machine
+// and COINFLIP-CONTEXT.md for the model.
+//
+// THE PULL IS MEASURED IN THE COIN'S VISIBLE TRAVEL, not in raw pixels. The
+// coin's lift is bounded in METRES by the frame (scene.js#LIFT) while the
+// gesture is in PIXELS, and the projection between them depends on canvas size:
+// the lift band is 107 px at 480x300 and 384 px at 1920x1080. A fixed pixel
+// travel would make the same lift-and-slam worth 0.56 power on one and 2.02 on
+// the other — the player resizing their window would silently re-tune the
+// control. Feeding the band in as clampY + travelPx makes one full lift and
+// slam exactly 1.0 everywhere, and stops a pointer dragged past the ceiling
+// banking wind-up the coin never visibly made.
+const liftBand = () => {
+  const rect = canvas.getBoundingClientRect();
+  const top = worldYToScreenY(LIFT.maxY, rect);
+  const rest = worldYToScreenY(LIFT.minY, rect);
+  return { top, rest, travel: Math.max(rest - top, 1) };
+};
+
+const grab = createGrab(canvas, {
+  canStart: () => !locked && !flipper.busy && !dropping,
+  clampY: (y) => { const b = liftBand(); return Math.min(Math.max(y, b.top), b.rest); },
+  travelPx: () => liftBand().travel,
+  toWorldY: (y) => scene.screenYToWorldY(y),
+  // The floor is raised well above power.js#MIN_POWER for this gesture. There
+  // the coin only moved on a deliberate downward drag; here it follows the
+  // pointer the whole time, so a twitch on release would be a live throw — and
+  // a throw spends the player's one flip for the day.
+  minPower: 0.12,
+  onGrab: () => { canvas.classList.add('charging'); },
+  onChange: (p, info) => {
+    meter.set(p);
+    // the coin IS the meter: it goes where the hand goes
+    if (info.held && info.worldY != null) scene.setHeldPose(info.worldY);
+  },
+  // The wind-up went stale under a still hand. Say so once, quietly — the coin
+  // stays held, so this is a re-arm and not a cancel.
+  onRearm: () => { meter.flash('rewind', '#9a9a9a'); },
+  onThrow: (p) => {
+    canvas.classList.remove('charging');
+    meter.reset();
+    // The pose the coin was let go from IS the lead-in's starting point.
+    const fromPose = {
+      pos: scene.coinRoot.position.toArray(),
+      quat: scene.coinRoot.quaternion.toArray(),
+    };
+    scene.endHold();
+    flip(p, fromPose);
+  },
+  onCancel: async (reason) => {
+    canvas.classList.remove('charging');
+    meter.set(0);
+    meter.flash(reason === 'below-minimum' ? 'dropped' : 'cancelled', '#9a9a9a');
+    canvas.dataset.lastCancel = reason;
+    // LET GO, not thrown — so the coin FALLS. Deliberately not flipper.ready(),
+    // which animates it home: the coin is in the air and being released, and
+    // snapping it back to the table is the one thing that cannot be what
+    // happened. See flip3d/drop.js.
+    //
+    // scene.endHold() is NOT called first, and no ready() follows. playDrop
+    // eases the held shadow back across the fall — the shadow is the height
+    // cue, so it has to arrive WITH the coin rather than snapping ahead of it —
+    // and it leaves the coin on the exact rest pose, ORIENTATION 0 North.
+    if (dropping) return;
+    dropping = true;
+    canvas.dataset.dropping = '1';
+    try {
+      await playDrop(scene, {
+        fromY: scene.heldY,
+        face: pending ? pending.startFace : scene.currentFace(),
+        seed: nextSeed(),
+      });
+    } catch (err) {
+      console.warn('[flip3d] drop failed, parking the coin', err);
+      scene.endHold();
+      if (pending) await flipper.ready(pending.startFace, { animate: false });
+    } finally {
+      dropping = false;
+      delete canvas.dataset.dropping;
+    }
+  },
+});
+// LOAD-BEARING: a motionless pointer emits no events, so this is the only thing
+// that can fire the idle re-arm. Without it the feature does not exist.
+scene.onFrame(() => grab.tick());
+
+await arm();
+$('#status').textContent = library
+  ? `${library.stats.clips} baked clips ready`
+  : 'procedural fallback (no baked clips)';
+
+// --- console API (verification lives here, not in the UI) ------------------
+window.COINFLIP3D = {
+  scene, flipper, flip, library, blur, grab, meter,
+  get pending() { return pending; },
+  resolveFlip, buildProceduralClip, verifyClip, analyzeClip,
+  selectVariant, throwProfile, outcomeBand,
+  coinInfo: scene.coinInfo,
+  tableInfo: scene.tableInfo,
+
+  /**
+   * Every baked clip, both start faces, no rendering: select -> materialise ->
+   * re-derive side / rotations / settle yaw from the FRAMES and check them
+   * against the outcome that asked for them.
+   */
+  async selfTestLibrary({ limit = 0, startFaces = ['Heads', 'Tails'] } = {}) {
+    if (!library) return { error: 'no library' };
+    const entries = limit ? library.index.slice(0, limit) : library.index;
+    let n = 0; const bad = [];
+    const durations = [];
+    for (const e of entries) {
+      for (const startFace of startFaces) {
+        const side = expectedSide(startFace, e.halfFlips);
+        const outcome = {
+          startFace, side, spins: e.halfFlips,
+          orientationDeg: e.orientationDeg, quadrant: e.quadrant,
+          edge: false, clipId: e.id,
+        };
+        const clip = await library.clipFor(outcome);
+        const v = verifyClip(clip);
+        n++;
+        durations.push(clip.meta.durationMs);
+        // ORIENT_TOL_DEG (0.011), not a tighter ad-hoc number. The frames store
+        // quaternions at 6 decimals, which pins the re-derived angle only to
+        // about +/-0.005 deg; contract.js records that 4 of the 1024 clips sit
+        // within a whisker of a .xx5 boundary and re-round one hundredth away.
+        // This assertion used to use 0.006 and therefore reported those 4 clips
+        // (x2 start faces = 8 cases) as failures against data that is correct —
+        // one hundredth is the tightest claim the stored data can support, and
+        // it is the number the payout is made on.
+        const matches = v.finalSide === side && v.finalQuadrant === e.quadrant
+          && v.halfFlipsSeen === e.halfFlips
+          && Math.abs(v.finalOrientationDeg - e.orientationDeg) <= ORIENT_TOL_DEG;
+        if (!v.pass || !matches) bad.push({ id: e.id, startFace, ok: v.ok, seen: {
+          side: v.finalSide, quad: v.finalQuadrant, hf: v.halfFlipsSeen, deg: v.finalOrientationDeg,
+        }, want: { side, quad: e.quadrant, hf: e.halfFlips, deg: e.orientationDeg } });
+      }
+    }
+    durations.sort((a, b) => a - b);
+    return {
+      cases: n, failures: bad.length, bad: bad.slice(0, 5),
+      durationMs: { min: durations[0], median: durations[durations.length >> 1], max: durations[durations.length - 1] },
+    };
+  },
+
+  /** Pure-maths sweep of the PROCEDURAL fallback: spins x faces x edge angles. */
+  selfTestProcedural() {
+    const angles = [0, 0.01, 44.99, 45, 89.99, 90, 179.99, 180, 269.99, 270, 359.99, 212.34];
+    let n = 0; const bad = [];
+    for (const startFace of ['Heads', 'Tails']) {
+      for (const spins of SPIN_VALUES) {
+        for (const orientationDeg of angles) {
+          const o = { startFace, side: expectedSide(startFace, spins), spins, orientationDeg, quadrant: quadrantFromOrientation(orientationDeg) };
+          const v = verifyClip(buildProceduralClip(o, { seed: `${startFace}|${spins}|${orientationDeg}` }));
+          n++;
+          if (!v.pass) bad.push({ o, ok: v.ok });
+        }
+      }
+    }
+    return { cases: n, failures: bad.length, bad: bad.slice(0, 5) };
+  },
+
+  /** Drive a specific outcome through the real playback path. */
+  async play(outcome, opts) { return flipper.playFlip(outcome, { ...playOpts(), ...opts }); },
+
+  // =========================================================================
+  // REST POSE — the coin the player presses on must sit at ORIENTATION 0 (North)
+  // =========================================================================
+  /**
+   * Reads the LIVE scene, not the maths: park the coin each way and re-derive
+   * the orientation off the canonical node AND off the rendered GLB mesh's
+   * world transform. Then re-park at the flip's start face so nothing is left
+   * disturbed.
+   */
+  selfTestRestPose() {
+    const before = { pos: scene.coinRoot.position.toArray(), quat: scene.coinRoot.quaternion.toArray() };
+    const rows = [];
+    for (const face of ['Heads', 'Tails']) {
+      scene.setRestFace(face);
+      scene.coinRoot.updateMatrixWorld(true);
+      const canonical = orientationFromQuat(scene.coinRoot.quaternion.toArray());
+      rows.push({
+        face,
+        canonicalOrientationDeg: +canonical.toFixed(6),
+        modelOrientationDeg: +scene.modelOrientationDeg().toFixed(6),
+        faceUp: scene.currentFace(),
+        modelFaceUp: scene.modelHeadsUp() ? 'Heads' : 'Tails',
+      });
+    }
+    scene.coinRoot.position.fromArray(before.pos);
+    scene.coinRoot.quaternion.fromArray(before.quat);
+    scene.coinRoot.updateMatrixWorld(true);
+    const TOL = 0.011;   // ORIENT_TOL_DEG
+    const failures = rows.filter((r) =>
+      Math.abs(r.canonicalOrientationDeg - REST_ORIENTATION_DEG) > 1e-6 ||
+      Math.abs(r.modelOrientationDeg - REST_ORIENTATION_DEG) > TOL * 2 ||
+      r.faceUp !== r.face || r.modelFaceUp !== r.face);
+    return { want: REST_ORIENTATION_DEG, rows, failures: failures.length, bad: failures };
+  },
+
+  // =========================================================================
+  // MOTION BLUR
+  // =========================================================================
+  /**
+   * The shutter planner, exercised as pure maths across the real angular range,
+   * every quality tier, and the landing gate. No GPU, so it runs in a hidden
+   * pane where nothing draws.
+   */
+  selfTestBlurPlan() {
+    const cases = [];
+    const bad = [];
+    const base = { clipMs: 300, dClipMs: 16.7, touchdownMs: 600, durationMs: 900 };
+    const wasQ = blur.quality;
+    for (const q of ['off', 'low', 'medium', 'high']) {
+      blur.quality = q;
+      for (const omega of [0, 5, 20, 42, 100, 150, 209, 235.5]) {
+        const p = blur.planShutter({ ...base, omega });
+        const n = p ? p.n : 0;
+        cases.push({ q, omega, n, sweepDeg: p ? +p.sweepDeg.toFixed(1) : 0 });
+        if (q === 'off' && p) bad.push({ why: 'blur planned while off', q, omega });
+        if (p && n > QUALITY[q].maxSamples) bad.push({ why: 'over sample cap', q, omega, n });
+        // capping must shorten the smear, never space the samples out
+        if (p && p.sweepDeg / p.n > 14.001) bad.push({ why: 'sample spacing exceeded', q, omega, spacing: p.sweepDeg / p.n });
+      }
+    }
+    // magnitude must RISE with omega inside a tier
+    blur.quality = 'high';
+    let prev = -1;
+    for (const omega of [10, 20, 42, 100, 209]) {
+      const p = blur.planShutter({ ...base, omega });
+      const n = p ? p.n : 0;
+      if (n < prev) bad.push({ why: 'sample count fell as omega rose', omega, n, prev });
+      prev = n;
+    }
+    // the landing gate must shut the blur across first contact
+    const gate = [];
+    for (const clipMs of [400, 520, 540, 600, 640, 660, 800]) {
+      const p = blur.planShutter({ ...base, clipMs, omega: 209 });
+      gate.push({ clipMs, blurred: !!p, n: p ? p.n : 0 });
+    }
+    if (gate.find((g) => g.clipMs >= base.touchdownMs + 40).blurred) {
+      bad.push({ why: 'still blurring after the landing gate should be shut' });
+    }
+    if (!gate[0].blurred) bad.push({ why: 'not blurring mid-flight at 209 rad/s' });
+    blur.quality = wasQ;
+    return { cases, gate, failures: bad.length, bad };
+  },
+
+  /**
+   * MEASURED FRAME COST, blur on vs off. Draws the same scene at the same pose
+   * both ways with gl.finish() per frame so the GPU is actually waited on —
+   * without it the CPU just queues commands and the numbers are fiction.
+   * Runs with renderWhenHidden so it works in a hidden pane.
+   */
+  async benchBlur({ frames = 90, warmup = 20, omega = 209, quality = null } = {}) {
+    const gl = scene.renderer.getContext();
+    const wasHidden = scene.renderWhenHidden;
+    const wasQ = blur.quality;
+    scene.renderWhenHidden = true;
+    if (quality) blur.quality = quality;
+
+    // A real clip, sampled for real — the bench must not measure a fake pose.
+    let clip;
+    if (library) {
+      const e = library.index.find((x) => x.halfFlips >= 28) ?? library.index[0];
+      clip = await library.clipFor({
+        startFace: 'Heads', side: expectedSide('Heads', e.halfFlips), spins: e.halfFlips,
+        orientationDeg: e.orientationDeg, quadrant: e.quadrant, edge: false, clipId: e.id,
+      });
+    } else {
+      clip = buildProceduralClip({ startFace: 'Heads', side: 'Heads', spins: 28, orientationDeg: 40, quadrant: 'N' }, { seed: 'bench' });
+    }
+    const a = analyzeClip(clip);
+    const f = clip.frames;
+    const sample = (ms, out) => {
+      const c = Math.min(Math.max(ms, 0), clip.meta.durationMs);
+      let lo = 0, hi = f.length - 1;
+      while (lo + 1 < hi) { const m = (lo + hi) >> 1; if (f[m].t <= c) lo = m; else hi = m; }
+      const f0 = f[lo], f1 = f[Math.min(lo + 1, f.length - 1)];
+      const k = f1.t > f0.t ? (c - f0.t) / (f1.t - f0.t) : 0;
+      for (let i = 0; i < 3; i++) out.pos[i] = f0.pos[i] + (f1.pos[i] - f0.pos[i]) * k;
+      const qa = new scene.THREE.Quaternion().fromArray(f0.quat);
+      const qb = new scene.THREE.Quaternion().fromArray(f1.quat);
+      qa.slerp(qb, k);
+      out.quat[0] = qa.x; out.quat[1] = qa.y; out.quat[2] = qa.z; out.quat[3] = qa.w;
+      return out;
+    };
+    const midFlight = a.touchdownMs * 0.45;
+    const pose = sample(midFlight, { pos: [0, 0, 0], quat: [0, 0, 0, 1] });
+    scene.setCoinPose(pose.pos, pose.quat);
+
+    const plan = {
+      sample, clipMs: midFlight, dClipMs: 16.7, omega,
+      touchdownMs: a.touchdownMs, durationMs: clip.meta.durationMs,
+    };
+
+    // performance.now() is clamped to 100 us in a non-cross-origin-isolated
+    // page, and a single frame lands under that, so per-frame timing returns
+    // quantised nonsense. Time a whole BATCH between two gl.finish() calls and
+    // divide: the clamp becomes negligible against a 100+ frame total, and the
+    // GPU pipeline runs at the throughput a real render loop would see.
+    const runBatch = (withBlur, reps) => {
+      blur.setPlan(withBlur ? plan : null);
+      for (let i = 0; i < warmup; i++) scene.drawOnce();
+      gl.finish();
+      const t0 = performance.now();
+      for (let i = 0; i < reps; i++) scene.drawOnce();
+      gl.finish();
+      return (performance.now() - t0) / reps;
+    };
+
+    // Draw-call counts prove the accumulation is really happening — the one
+    // piece of evidence that does not depend on a clock or on seeing the page.
+    const countCalls = (withBlur) => {
+      const info = scene.renderer.info;
+      const wasAuto = info.autoReset;
+      info.autoReset = false;
+      blur.setPlan(withBlur ? plan : null);
+      scene.drawOnce();          // prime (shader compiles etc.)
+      info.reset();
+      scene.drawOnce();
+      const out = { calls: info.render.calls, triangles: info.render.triangles };
+      info.autoReset = wasAuto;
+      return out;
+    };
+
+    const planned = blur.planShutter(plan);
+    const callsOff = countCalls(false);
+    const callsOn = countCalls(true);
+
+    // Interleave the two batches so thermal/scheduling drift hits both equally.
+    const offRuns = [], onRuns = [];
+    for (let r = 0; r < 5; r++) {
+      offRuns.push(runBatch(false, frames));
+      onRuns.push(runBatch(true, frames));
+    }
+    const med = (a) => { const s = a.slice().sort((x, y) => x - y); return +s[s.length >> 1].toFixed(4); };
+    const off = med(offRuns), on = med(onRuns);
+
+    blur.setPlan(null);
+    scene.renderWhenHidden = wasHidden;
+    blur.quality = wasQ;
+    return {
+      quality: quality ?? wasQ,
+      omega,
+      samplesPerFrame: planned ? planned.n : 0,
+      sweepDeg: planned ? +planned.sweepDeg.toFixed(1) : 0,
+      canvas: [scene.renderer.domElement.width, scene.renderer.domElement.height],
+      clipId: clip.meta.id ?? 'procedural',
+      framesPerBatch: frames,
+      drawCalls: { off: callsOff, on: callsOn },
+      offMsPerFrame: off,
+      onMsPerFrame: on,
+      offRuns: offRuns.map((v) => +v.toFixed(4)),
+      onRuns: onRuns.map((v) => +v.toFixed(4)),
+      deltaMs: +(on - off).toFixed(4),
+      ratio: +(on / off).toFixed(2),
+      pctOf60HzBudget: +((on - off) / 16.67 * 100).toFixed(2),
+    };
+  },
+
+  /** Cost across every tier, at the fastest rotation the bake actually contains. */
+  async benchBlurAll(opts = {}) {
+    const out = {};
+    for (const q of ['low', 'medium', 'high']) out[q] = await this.benchBlur({ ...opts, quality: q });
+    return out;
+  },
+
+  // =========================================================================
+  // POWER
+  // =========================================================================
+  /**
+   * The power -> throw mapping, and THE BOUNDARY.
+   * The first half checks that power moves what it is supposed to move; the
+   * second half checks that it cannot move anything else.
+   */
+  async selfTestPower({ seeds = 400 } = {}) {
+    const bad = [];
+
+    // --- power moves the throw's character, monotonically ------------------
+    const profiles = [0, 0.25, 0.5, 0.75, 1].map((p) => ({
+      power: p,
+      ...throwProfile(p, { launchSpeed: 2.6, launchHeight: 0.2193, daringness: 0.5 }),
+    }));
+    for (let i = 1; i < profiles.length; i++) {
+      if (!(profiles[i].leadInMs < profiles[i - 1].leadInMs)) bad.push({ why: 'lead-in did not shorten with power', at: profiles[i].power });
+      if (!(profiles[i].airborneSec > profiles[i - 1].airborneSec)) bad.push({ why: 'airborne time did not grow with power', at: profiles[i].power });
+      if (!(profiles[i].proceduralApexM > profiles[i - 1].proceduralApexM)) bad.push({ why: 'procedural apex did not grow with power', at: profiles[i].power });
+      if (!(profiles[i].camPulloutMs < profiles[i - 1].camPulloutMs)) bad.push({ why: 'camera pullout did not quicken with power', at: profiles[i].power });
+      if (profiles[i].flickForce !== profiles[i].power) bad.push({ why: 'flickForce is not the power', at: profiles[i].power });
+    }
+
+    // --- power moves the VARIANT, and only inside the drawn cell -----------
+    const energyByPower = {};
+    if (library) {
+      for (const p of [0, 0.25, 0.5, 0.75, 1]) {
+        let sum = 0, n = 0;
+        for (const [key, pool] of library.cells) {
+          const v = selectVariant(pool, { daringness: 0.5, flickForce: p, seedHex: 'abc123' + key });
+          if (pool.indexOf(v) < 0) bad.push({ why: 'variant is not from the cell pool', key, p });
+          if (v.halfFlips !== pool[0].halfFlips || v.quadrant !== pool[0].quadrant) {
+            bad.push({ why: 'variant left the cell', key, p });
+          }
+          sum += v.energy; n++;
+        }
+        energyByPower[p] = +(sum / n).toFixed(4);
+      }
+      const ps = Object.keys(energyByPower).map(Number).sort((a, b) => a - b);
+      for (let i = 1; i < ps.length; i++) {
+        if (energyByPower[ps[i]] < energyByPower[ps[i - 1]]) {
+          bad.push({ why: 'mean variant energy fell as power rose', at: ps[i] });
+        }
+      }
+    }
+
+    // --- THE BOUNDARY: power cannot touch the outcome ----------------------
+    // Same seeds, every power. If a single field of the drawn outcome moves,
+    // power has leaked into the draw and this fails.
+    let checked = 0;
+    for (let i = 0; i < seeds; i++) {
+      const seed = 'boundary::' + i;
+      const ref = await resolveFlip(seed, library);
+      for (const p of [0, 0.5, 1]) {
+        const band = outcomeBand(SPIN_VALUES, p);
+        const got = await resolveFlip(seed, library, { band });
+        checked++;
+        if (got.startFace !== ref.startFace || got.side !== ref.side
+          || got.spins !== ref.spins || got.quadrant !== ref.quadrant) {
+          bad.push({ why: 'outcome moved with power', seed, p, ref, got });
+        }
+      }
+    }
+
+    return {
+      profiles: profiles.map((p) => ({
+        power: p.power,
+        leadInMs: +p.leadInMs.toFixed(1),
+        anticipation: +p.leadInAnticipation.toFixed(3),
+        exitSpeed: +p.leadInExitSpeed.toFixed(2),
+        airborneSec: +p.airborneSec.toFixed(3),
+        proceduralApexM: +p.proceduralApexM.toFixed(3),
+        camPulloutMs: +p.camPulloutMs.toFixed(0),
+      })),
+      meanVariantEnergyByPower: energyByPower,
+      bandIsFull: outcomeBand(SPIN_VALUES, 1).length === SPIN_VALUES.length,
+      powerNarrowsBand: POWER_NARROWS_BAND,
+      outcomeChecks: checked,
+      failures: bad.length,
+      bad: bad.slice(0, 8),
+    };
+  },
+
+  /** Power really does reach the renderer: play the same outcome at 0 and at 1. */
+  async selfTestPowerPlayback() {
+    const o = pending;
+    const seedHex = pendingSeedHex;
+    const runs = [];
+    for (const power of [0, 1]) {
+      const r = await flipper.playFlip(o, { ...playOpts(), power, seedHex, daringness: 0.5 });
+      runs.push({
+        power,
+        clipId: r.clipId, energy: r.resolvedOutcome.energy,
+        leadInMs: +r.throw.leadInMs.toFixed(1),
+        exitSpeed: r.throw.leadInExitSpeed && +r.throw.leadInExitSpeed.toFixed(2),
+        camPulloutMs: +r.throw.camPulloutMs.toFixed(0),
+        apexY: +r.throw.apexY.toFixed(4),
+        peakOmega: r.throw.peakOmega,
+        // the bet axes, which must be identical between the two runs
+        spins: r.meta.halfFlips, side: r.played.landedFace, quadrant: r.played.landedQuadrant,
+        betAxesPreserved: r.ok.betAxesPreserved,
+        pass: r.pass,
+      });
+    }
+    await arm();
+    const [a, b] = runs;
+    const bad = [];
+    if (a.spins !== b.spins || a.side !== b.side || a.quadrant !== b.quadrant) {
+      bad.push({ why: 'power changed a bet axis', a, b });
+    }
+    if (!(b.leadInMs < a.leadInMs)) bad.push({ why: 'lead-in did not shorten at full power' });
+    if (!a.betAxesPreserved || !b.betAxesPreserved) bad.push({ why: 'betAxesPreserved went false' });
+    if (!a.pass || !b.pass) bad.push({ why: 'a run failed verification' });
+    return { runs, failures: bad.length, bad };
+  },
+
+  /**
+   * The gesture against the REAL canvas.
+   *
+   * tools/verify-grab.mjs already hammers the state machine over stubs, and it
+   * does it far harder than anything here could. What it CANNOT check is the
+   * part that only exists once the thing is wired: that the lift band derived
+   * from this canvas's live bounding rect turns one full lift-and-slam into
+   * exactly 1.0. That coupling — pixels here, metres in scene.js, a projection
+   * between them — is where the integration bug was, so it is what this checks.
+   *
+   * It drives a THROWAWAY grab, never the live one: the live one's onThrow
+   * spends the player's flip.
+   */
+  selfTestGrab() {
+    const bad = [];
+    const rect = canvas.getBoundingClientRect();
+    const top = worldYToScreenY(LIFT.maxY, rect);
+    const rest = worldYToScreenY(LIFT.minY, rect);
+    const travel = Math.max(rest - top, 1);
+
+    const el = document.createElement('div');
+    Object.defineProperty(el, 'getBoundingClientRect', { value: () => rect });
+    document.body.appendChild(el);
+    const log = [];
+    let t = 0;
+    const g = createGrab(el, {
+      now: () => t,
+      minPower: 0.12,
+      clampY: (y) => Math.min(Math.max(y, top), rest),
+      travelPx: () => travel,
+      onThrow: (p) => log.push({ ev: 'throw', p: +p.toFixed(4) }),
+      onCancel: (r) => log.push({ ev: 'cancel', r }),
+      onRearm: () => log.push({ ev: 'rearm' }),
+    });
+    const ev = (id, x, y) => ({ pointerId: id, clientX: x, clientY: y, preventDefault() {} });
+
+    // 1. lift to the ceiling and slam to the table -> exactly full power
+    g._begin(ev(1, 200, rest)); g._move(ev(1, 200, top)); g._finish(ev(1, 200, rest));
+    // 2. the pointer driven past the ceiling banks nothing extra
+    g._begin(ev(2, 200, rest)); g._move(ev(2, 200, top - 400)); g._finish(ev(2, 200, rest));
+    // 3. picked up and put straight back down -> a put-back, never a limp throw
+    g._begin(ev(3, 200, rest)); g._finish(ev(3, 200, rest));
+    // 4. wind up, go still, and the wind-up goes stale in the hand
+    g._begin(ev(4, 200, rest)); g._move(ev(4, 200, top));
+    t += 2000; g.tick();
+    const afterRearm = g.power;
+    g._finish(ev(4, 200, top));
+    // 5. escape drops it
+    g._begin(ev(5, 200, rest)); g._move(ev(5, 200, top)); g.cancel('escape');
+    g.dispose(); el.remove();
+
+    const want = [
+      { ev: 'throw', p: 1 }, { ev: 'throw', p: 1 },
+      { ev: 'cancel', r: 'below-minimum' },
+      { ev: 'rearm' }, { ev: 'cancel', r: 'below-minimum' },
+      { ev: 'cancel', r: 'escape' },
+    ];
+    want.forEach((w, i) => {
+      const got = log[i];
+      if (!got || got.ev !== w.ev) bad.push({ i, want: w, got });
+      else if (w.p != null && Math.abs(got.p - w.p) > 1e-6) bad.push({ i, want: w, got });
+      else if (w.r != null && got.r !== w.r) bad.push({ i, want: w, got });
+    });
+    if (afterRearm !== 0) bad.push({ why: 'the idle re-arm did not zero the wind-up', afterRearm });
+    if (!(travel > 20)) bad.push({ why: 'lift band is implausibly small', travel });
+
+    return {
+      canvas: { width: rect.width, height: rect.height },
+      liftBandPx: +travel.toFixed(1),
+      log, failures: bad.length, bad,
+    };
+  },
+
+  /** Everything that does not need a GPU, in one call. */
+  async selfTestAll(opts = {}) {
+    const r = {
+      restPose: this.selfTestRestPose(),
+      blurPlan: this.selfTestBlurPlan(),
+      grab: this.selfTestGrab(),
+      power: await this.selfTestPower(opts.power ?? {}),
+      procedural: this.selfTestProcedural(),
+      library: await this.selfTestLibrary(opts.library ?? {}),
+    };
+    r.totalFailures = Object.values(r).reduce((a, v) => a + (v && v.failures ? v.failures : 0), 0);
+    r.pass = r.totalFailures === 0;
+    return r;
+  },
+};
+console.log('[flip3d] ready', scene.coinInfo, scene.tableInfo);
+</script>
+</body>
+</html>

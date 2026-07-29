@@ -1,0 +1,39 @@
+# -----------------------------------------------------------------------------
+# COPY THIS FILE TO `.dev.vars` AND FILL IT IN. `.dev.vars` IS GITIGNORED.
+# Never put real values in this file — it IS committed.
+#
+# `.dev.vars` is read by `wrangler dev` only. For the deployed Worker the same
+# names are set with `wrangler secret put <NAME>` (see ../DEPLOYMENT.md §4).
+# -----------------------------------------------------------------------------
+
+# The OAuth 2.0 Client ID from Google Cloud Console. Public by nature (it is
+# shipped to the browser), but it is still verified server-side as the `aud`
+# claim of every ID token, so it must be correct.
+GOOGLE_CLIENT_ID=000000000000-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com
+
+# The OAuth Client Secret. SECRET. Only needed for the authorization-code flow
+# (/api/auth/google/start -> /callback). The Google Identity Services one-tap
+# flow (/api/auth/google) does not use it.
+GOOGLE_CLIENT_SECRET=REPLACE_ME
+
+# Where Google sends the browser back after consent. MUST byte-match one of the
+# "Authorised redirect URIs" registered on the OAuth client.
+GOOGLE_REDIRECT_URI=http://localhost:8788/api/auth/google/callback
+
+# Where the user lands after a successful login (your game page).
+POST_LOGIN_REDIRECT=http://localhost:8788/
+
+# HMAC key for session JWTs and the OAuth state cookie. SECRET.
+# Generate 32 random bytes yourself, e.g.
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+SESSION_SECRET=REPLACE_ME_WITH_32_RANDOM_BYTES
+
+# HMAC key for device fingerprints (see fingerprint.js). SECRET, and rotating it
+# re-buckets every device, so treat it as permanent.
+FINGERPRINT_SALT=REPLACE_ME_WITH_32_RANDOM_BYTES
+
+# LOCAL DEVELOPMENT ONLY. Enables /api/dev/* (mint a session without Google,
+# open a round with a chosen salt, rewind the 24h cooldown). The Worker refuses
+# to start these routes unless this is exactly "true" AND ENVIRONMENT != production.
+# NEVER set this as a deployed secret.
+DEV_ROUTES_ENABLED=true

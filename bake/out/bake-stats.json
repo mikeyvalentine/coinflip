@@ -1,0 +1,45 @@
+{
+ "seed": "coinflip-bake-v1",
+ "perCell": 8,
+ "clips": 1024,
+ "sims": 7030,
+ "gatePassed": 6883,
+ "gateFailed": 9,
+ "outOfBand": 138,
+ "overflow": 18,
+ "rejects": {
+  "excluded-median": 110,
+  "too-far": 9,
+  "out-of-range": 28
+ },
+ "biasEma": 1.036050407628738,
+ "minPerCell": 8,
+ "maxPerCell": 8,
+ "underfilled": 0,
+ "bakeMs": 48125,
+ "totalMs": 49384,
+ "sideCount": {
+  "Heads": 512,
+  "Tails": 512
+ },
+ "quadCount": {
+  "N": 256,
+  "E": 256,
+  "S": 256,
+  "W": 256
+ },
+ "orientBins": [
+  84,
+  88,
+  84,
+  85,
+  85,
+  86,
+  91,
+  80,
+  85,
+  82,
+  88,
+  86
+ ]
+}

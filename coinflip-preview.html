@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COINFLIP</title>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: "Google Sans", "Google Sans Text", sans-serif; margin: 0; padding: 60px 24px 40px;
+         --field-x: 260px; --sel:#2563eb; --sel-soft:#9ec1f5; }
+
+  /* top bar. The BAR is the positioned element; the two readouts inside it are
+     ordinary flow content, so a narrow screen can drop the whole thing into the
+     document by changing one property instead of un-pinning two corners. */
+  #topbar { position:absolute; top:0; left:0; right:0; margin:8px;
+            display:flex; justify-content:space-between; align-items:flex-start;
+            flex-wrap:wrap; gap:4px 16px; }
+  #money { font-weight:700; }
+
+  #form { display:block; position:relative; }
+  #grid { display:grid; grid-template-columns:auto 1fr auto; row-gap:22px; column-gap:16px; align-items:start; }
+  .dot {
+    width:14px; height:14px; border-radius:50%;
+    border:2px solid #ccc; background:#ccc; padding:0; margin-top:4px;
+    transition:transform 0.1s, background 0.15s, border-color 0.15s; cursor:default;
+    align-self:start;
+  }
+  .dot.current { background:black; border-color:black; }
+  .dot.clickable { cursor:pointer; }
+  .dot.clickable:hover { transform:scale(1.3); }
+  .dot.hidden { visibility:hidden; }
+  .row-label { font-weight:700; }
+  .row-choices { margin-top:4px; }
+  .row-mult { font-weight:700; text-align:right; color:#9a9a9a; margin-top:4px; }
+  .aspect-cell.locked { color:#9a9a9a; }
+  .aspect-cell.hidden { visibility:hidden; }
+  .row-mult.hidden { visibility:hidden; }
+  .grid-divider { grid-column:1 / -1; border-top:1px solid #ccc; margin-top:6px; }
+  .total-mult { color:black; }
+  .total-content { font-weight:700; }
+  .field-row { display:grid; grid-template-columns:var(--field-x) auto; align-items:start; }
+  /* every row's staked amount sits in one aligned column, Total included */
+  .row-amt { color:#9a9a9a; white-space:nowrap; font-variant-numeric:tabular-nums; margin-top:4px; }
+  .total-content .row-amt { color:black; margin-top:0; }
+  .field-pre { display:inline-flex; align-items:center; gap:14px; white-space:nowrap; }
+
+  /* bet bar: bet (left) — Flip (center) — coin (right) */
+  #betbar { display:flex; justify-content:center; margin-top:28px; }
+  #betbar .bet-side { justify-self:end; text-align:right; }
+  #betbar .coin-side { justify-self:start; }
+
+  /* broke flip: minimal one-line bar */
+  #brokeScreen { margin-top:40px; }
+  .broke-bar { display:flex; align-items:center; gap:16px; }
+  .broke-label { font-weight:700; }
+  #debugBar { margin-top:60px; padding-top:16px; border-top:1px solid #eee; }
+  #debugBar button { font:inherit; color:#9a9a9a; background:none; border:1px solid #ddd; padding:4px 10px; cursor:pointer; }
+  #debugBar button:hover { color:black; border-color:black; }
+  #brokeResult { font-weight:700; font-size:18px; min-width:36px; }
+  .chosen { font-style:normal; }
+
+  /* coin */
+  #coinVis, #coinVisBroke { perspective:400px; cursor:pointer; width:64px; transition:opacity .15s; }
+  #coinVis.locked, #coinVisBroke.locked { opacity:.35; cursor:default; }
+  .coin { width:64px; height:64px; position:relative; transform-style:preserve-3d; transition:transform 0.12s linear; }
+  #spinCounter { margin-top:8px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .coin.tails { transform:rotateY(180deg); }
+  .coin .face {
+    position:absolute; width:64px; height:64px; border-radius:50%;
+    border:2px solid black; display:flex; align-items:center; justify-content:center;
+    backface-visibility:hidden; -webkit-backface-visibility:hidden; font-size:12px; background:white;
+  }
+  .coin .back { transform:rotateY(180deg); }
+
+  /* direction dial */
+  #dial .quad { transition:transform 0.08s; transform-origin:80px 80px; }
+  #dial { touch-action:none; user-select:none; }   /* so a drag paints instead of scrolling */
+  /* arrows are driven by CSS transform so they SLIDE between positions; when a
+     pair merges, both members travel to the same cardinal spot and overlap = one arrow */
+  #dial-arrows [data-arrow] { transform-box:view-box; transform-origin:0 0;
+    transition:transform .3s cubic-bezier(.22,.9,.28,1); }
+
+  /* text choices (no buttons) */
+  .opt {
+    color:#9a9a9a; cursor:pointer; margin-right:14px;
+    display:inline-block; transition:color 0.12s, opacity 0.2s;
+  }
+  .opt:hover { color:black; }
+  /* selection reads as COLOUR, not absence — unpicked options stay legible */
+  .txtfield { color:#9a9a9a; }
+  .txtfield input { font:inherit; font-weight:400; border:none; border-bottom:1px solid #ccc; outline:none; width:70px; }
+  .iconbtn { color:#c4c4c4; cursor:pointer; display:inline-flex; align-items:center; margin-left:10px; transition:color .12s; }
+
+  /* staged result reveal */
+  .opt { transition:color .12s, opacity .2s, transform .25s; }
+  .opt.res-win  { color:#1a9e3f !important; opacity:1 !important; transform:scale(1.35); transform-origin:left center; }
+  .opt.res-loss { color:#d12d2d !important; opacity:1 !important; }
+  #dial .quad { transition:transform .28s, fill .28s; }
+  #dial .quad.res-win  { fill:#1a9e3f; transform:scale(1.18); }
+  #dial .quad.res-loss { fill:#d12d2d; }
+  .total-mult { transition:transform .12s; display:inline-block; }
+  /* #stepTotal colour is set inline per-frame — see positionColour() */
+  .row-mult.res-win  { color:#1a9e3f; }
+  .row-mult.res-loss { color:#d12d2d; }
+  /* the running total lives IN the amount column, sliding through the ₿ values
+     rather than floating centred over the form */
+  #stepTotal { position:absolute; text-align:left; white-space:nowrap;
+               font-weight:700; font-size:22px; line-height:24px; visibility:hidden;
+               font-variant-numeric:tabular-nums; pointer-events:none; transform-origin:left center;
+               transition:top .5s cubic-bezier(.22,.9,.28,1), left .5s cubic-bezier(.22,.9,.28,1), opacity .3s; }
+  .row-amt.amt-hidden { visibility:hidden; }
+  .iconbtn:hover { color:black; }
+  .iconbtn.on { color:black; }
+  .txtfield input::-webkit-outer-spin-button,
+  .txtfield input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  .txtfield input[type=number] { -moz-appearance:textfield; }
+  .txtfield input:focus { border-color:black; }
+
+  /* spin line bet: typed line + optional higher/lower modifier */
+  .spin-entry { display:inline-flex; align-items:center; gap:14px; }
+  .opt.on { color:var(--sel); }
+  .opt.dead { opacity:.25; pointer-events:none; }
+  #lineWrap { display:inline-block; transform-origin:left center; transition:transform .25s; }
+  #lineWrap.res-win { transform:scale(1.35); }
+  #lineWrap.res-win input  { color:#1a9e3f; border-color:#1a9e3f; }
+  #lineWrap.res-loss input { color:#d12d2d; border-color:#d12d2d; }
+  #spinLanded { visibility:hidden; min-width:46px; color:#1a9e3f; }
+
+  /* the two presets. Selection is COLOUR, as everywhere else: the one you did
+     not pick stays grey and fully legible, with its numbers still showing, so
+     the trade you are turning down is always on screen next to the one you took. */
+  .mode-row { display:grid; grid-template-columns:var(--field-x) auto; align-items:baseline; }
+  .opt.mode { font-weight:700; letter-spacing:.04em; }
+  .mode-stat { color:#9a9a9a; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .aspect-cell.void { opacity:.25; pointer-events:none; }
+  #bankLine { font-weight:400; color:#9a9a9a; margin-top:2px; }
+  #bankCtl { margin-left:10px; white-space:nowrap; }
+  #bankInput { font:inherit; width:64px; border:none; border-bottom:1px solid #ccc;
+               outline:none; background:none; color:inherit; text-align:right; }
+  #bankInput:focus { border-color:black; }
+  #bankInput::-webkit-outer-spin-button, #bankInput::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  #bankInput[type=number] { -moz-appearance:textfield; }
+  #bankBtn { cursor:pointer; text-decoration:underline; margin-left:8px; }
+  #bankBtn:hover { color:black; }
+  #bankCtl.off { opacity:.35; pointer-events:none; }
+  #m-spread { font-weight:400; }
+  /* The Edge reads purple, never green — it is a different kind of event */
+  .opt.res-edge { color:#8b4ad6 !important; opacity:1 !important; transform:scale(1.35); transform-origin:left center; }
+  .row-mult.res-edge { color:#8b4ad6; }
+
+  /* ==================== NARROW SCREENS ====================
+     ADDITIVE ONLY, and STRUCTURE IS NEVER TOUCHED. The grid stays
+     dot | content | amount at every width, and .field-row keeps splitting the
+     content cell into var(--field-x) + amount.
+     That is load-bearing, not tidiness. revealResults() positions #stepTotal
+     from the LIVE offsetLeft of the Total row's .row-amt and the live offsetTop
+     of each row, both resolved against #form. So the sliding total follows
+     whatever the layout does for free — but only while the amount column is
+     still a column. Stacking the amount under the choices would look correct at
+     rest and put the readout in the wrong place the instant it moved, which is
+     the kind of bug that survives every static check.
+     Everything below is therefore width, spacing and wrapping. Nothing here
+     reparents an element, positions an ancestor of #stepTotal, or introduces a
+     transform/filter between #form and a row — any of which would silently
+     re-base the offsets the reveal is computed from. */
+
+  @media (max-width: 560px) {
+    /* --field-x has a hard floor: the dial is the widest thing in the choices
+       column and must fit inside it, plus slack so a selected quadrant's 1.18
+       scale does not reach into the amounts. */
+    body { padding:16px 16px 40px; --field-x:168px; }
+
+    /* nothing left to hang over, so the bar joins the flow */
+    #topbar { position:static; margin:0 0 22px; }
+
+    #grid { column-gap:12px; row-gap:20px; }
+
+    /* the coin IS the flip control — give it a finger */
+    #coinVis, #coinVisBroke { width:80px; }
+    .coin, .coin .face { width:80px; height:80px; }
+
+    /* the choices are bare spans, so they have only their text as hit area.
+       Vertical padding buys a real target without making them read as buttons —
+       and padding is static, so it cannot violate the rule that nothing moves
+       when something scales. */
+    .opt { padding:8px 0; margin-right:18px; }
+    #bankBtn { display:inline-block; padding:8px 0; }
+
+    /* line + higher + lower + landed readout is ~250px and will not fit the
+       choices column at this width. Wrapping keeps it inside its own column
+       instead of overrunning the amounts. */
+    .spin-entry { flex-wrap:wrap; gap:8px 12px; }
+
+    /* Spread is the one row with no amount to line up against (checked: #a-spread
+       has no .row-amt, and the reveal only ever targets side/orient/spins), so
+       it is free to give the slider the width instead of starting it at the
+       amount column. */
+    #a-spread .mode-row { grid-template-columns:auto 1fr; column-gap:14px; }
+
+    /* the readout now slides down a narrower column */
+    #stepTotal { font-size:19px; line-height:21px; }
+
+    .broke-bar { flex-wrap:wrap; gap:10px 16px; }
+    #debugBar { display:flex; flex-wrap:wrap; gap:8px; margin-top:40px; }
+    #out { overflow-x:auto; }
+  }
+
+  @media (max-width: 400px) {
+    body { padding:14px 14px 36px; --field-x:150px; }
+    /* CSS width beats the SVG width attribute and the viewBox is unchanged, so
+       every internal coordinate — including .quad's 80px transform-origin and
+       the arrows' view-box transform-box — still refers to the same places. */
+    #dial { width:142px; height:142px; }
+    #grid { column-gap:10px; }
+    .opt { margin-right:14px; }
+    #stepTotal { font-size:18px; line-height:20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- money and timer were each absolutely positioned into a corner. Wrapping them
+     in one bar changes nothing on desktop — the bar is the absolute element now
+     and space-between puts the two back in the same two corners — but it gives
+     narrow screens something to collapse INTO the flow, which two independently
+     positioned corners could never do. -->
+<div id="topbar">
+  <div id="money">
+    <div><span id="bal">0</span> ₿</div>
+    <div id="bankLine">banked <span id="bankAmt">0</span> ₿
+      <span id="bankCtl"><input type="number" id="bankInput" min="1" step="1"><span id="bankBtn">bank</span></span>
+    </div>
+  </div>
+  <div id="timerBar">Next flip in <b id="timer">00</b></div>
+</div>
+
+<!-- ============ BROKE FLIP ============ -->
+<div id="brokeScreen" style="display:none">
+  <div class="broke-bar">
+    <span class="broke-label">0 ₿. Broke flip.</span>
+    <span id="broke-choices">
+      <span class="opt pickB" data-val="Heads">Heads</span>
+      <span class="opt pickB" data-val="Tails">Tails</span>
+    </span>
+    <span id="brokeResult"></span>
+  </div>
+  <div class="coin-side" style="margin-top:20px">
+    <div id="coinVisBroke"></div>
+    <div id="spinCounterBroke"></div>
+  </div>
+</div>
+
+<!-- ============ VERTICAL FORM ============ -->
+<div id="form" style="display:none">
+  <div id="stepTotal">0</div>
+  <div id="grid">
+
+    <!-- SIDE -->
+    <button class="dot" data-idx="0"></button>
+    <div class="aspect-cell" id="a-side">
+      <div class="row-label">Side</div>
+      <div class="field-row">
+        <div class="row-choices" id="side-choices">
+          <span class="opt pick" data-val="Heads">Heads</span>
+          <span class="opt pick" data-val="Tails">Tails</span>
+          <span class="opt pick" data-val="Edge">Edge 🤯</span>
+        </div>
+        <span class="row-amt" id="amt-side"></span>
+      </div>
+    </div>
+    <div class="row-mult" id="m-side"></div>
+
+    <!-- DIRECTION -->
+    <button class="dot hidden" data-idx="1"></button>
+    <div class="aspect-cell hidden" id="a-orient">
+      <div class="row-label">Orientation</div>
+      <div class="field-row">
+      <div class="row-choices" id="orient-choices">
+        <svg id="dial" width="160" height="160" viewBox="0 0 160 160" style="cursor:pointer; overflow:visible">
+          <circle cx="80" cy="80" r="70" fill="none" stroke="black"></circle>
+          <line x1="80" y1="10" x2="80" y2="150" stroke="black"></line>
+          <line x1="10" y1="80" x2="150" y2="80" stroke="black"></line>
+          <path class="quad" d="M80,80 L80,10 A70,70 0 0,1 150,80 Z" fill="transparent" data-quad="NE"></path>
+          <path class="quad" d="M80,80 L150,80 A70,70 0 0,1 80,150 Z" fill="transparent" data-quad="SE"></path>
+          <path class="quad" d="M80,80 L80,150 A70,70 0 0,1 10,80 Z" fill="transparent" data-quad="SW"></path>
+          <path class="quad" d="M80,80 L10,80 A70,70 0 0,1 80,10 Z" fill="transparent" data-quad="NW"></path>
+          <!-- one arrow per quadrant, pointing along that sector's own diagonal.
+               The sectors sit between the cross lines, so their true directions
+               are the diagonals — cardinal letters described the boundaries, not
+               the sectors. Arrows are inert so they never swallow a drag. -->
+          <g id="dial-arrows" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" pointer-events="none">
+            <g data-arrow="NE" transform="translate(111.8,48.2) rotate(45)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <g data-arrow="SE" transform="translate(111.8,111.8) rotate(135)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <g data-arrow="SW" transform="translate(48.2,111.8) rotate(225)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <g data-arrow="NW" transform="translate(48.2,48.2) rotate(315)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <!-- two adjacent quadrants are just one cardinal direction, so their
+                 diagonals collapse into this single arrow on their shared edge -->
+            <g id="dial-merged" style="display:none"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+          </g>
+        </svg>
+      </div>
+      <span class="row-amt" id="amt-orient"></span>
+      </div>
+    </div>
+    <div class="row-mult hidden" id="m-orient"></div>
+
+    <!-- SPINS -->
+    <button class="dot hidden" data-idx="2"></button>
+    <div class="aspect-cell hidden" id="a-spins">
+      <div class="row-label">Spin <span style="font-weight:400;color:#9a9a9a">(<b id="spinRange">4–20</b>)</span></div>
+      <div class="field-row">
+        <div class="row-choices" id="spins-choices">
+          <span class="spin-entry">
+            <span class="txtfield" id="lineWrap"><input type="text" id="spinLine" placeholder="#" size="4"></span>
+            <span class="opt pick2" data-val="gt">higher</span>
+            <span class="opt pick2" data-val="lt">lower</span>
+            <span id="spinLanded"></span>
+          </span>
+        </div>
+        <span class="row-amt" id="amt-spins"></span>
+      </div>
+    </div>
+    <div class="row-mult hidden" id="m-spins"></div>
+
+    <!-- divider spans the whole table -->
+    <div class="grid-divider"></div>
+
+    <!-- SPREAD — one control instead of per-row amounts -->
+    <div></div>
+    <div class="aspect-cell hidden" id="a-spread">
+      <div class="mode-row">
+        <span class="opt mode" data-mode="spread">SPREAD</span>
+        <span class="mode-stat" id="stat-spread"></span>
+      </div>
+      <div class="mode-row">
+        <span class="opt mode" data-mode="ride">RIDE</span>
+        <span class="mode-stat" id="stat-ride"></span>
+      </div>
+    </div>
+    <div class="row-mult hidden" id="m-spread"></div>
+
+    <!-- TOTAL row: same 3 columns as the aspect rows -->
+    <div></div>
+    <div class="total-content">
+      <div class="field-row">
+        <span class="row-label">Total</span>
+        <span class="row-amt">₿ <span id="stake">0</span></span>
+      </div>
+    </div>
+    <div class="row-mult total-mult"><span id="finalX">×</span><span id="finalMult">0</span></div>
+
+  </div>
+</div>
+
+<!-- click the coin to flip -->
+<div id="betbar" style="display:none">
+  <div class="coin-side">
+    <div id="coinVis"></div>
+    <div id="spinCounter">spin: 0.0</div>
+  </div>
+</div>
+
+<div id="out"></div>
+
+<div id="debugBar">
+  <button id="debugReset">reset</button>
+  <button id="dbgTimerStart">start timer</button>
+  <button id="dbgTimerZero">timer 00</button>
+</div>
+
+<script type="module">
+// ---- axis + integer multipliers (derived from true odds) -----------------
+// Outcome library EXCLUDES the median value (24), giving N=32 clean outcomes.
+const SPIN_MIN=8, SPIN_MAX=40, MEDIAN=24;
+const SPIN_VALUES=[]; for(let s=SPIN_MIN;s<=SPIN_MAX;s++){ if(s!==MEDIAN) SPIN_VALUES.push(s); }
+const SPIN_N=SPIN_VALUES.length; // 32
+
+// Internally the outcome is an integer half-flip (parity decides the landing
+// side). Everything PLAYER-FACING is rotations = half-flips / 2. The two units
+// meet only at toRot/toHalf — nowhere else.
+const ROT_MIN=SPIN_MIN/2, ROT_MAX=SPIN_MAX/2, ROT_MEDIAN=MEDIAN/2; // 4, 20, 12
+const toRot=hf=>hf/2, toHalf=rot=>Math.round(rot*2);
+const FREE_BET_RETURN=50;
+
+// fair (zero-edge) multipliers. Spin is no longer a constant — it's priced from
+// the line you type (see spinMultFor), so only side and direction are fixed.
+const MULT = { side:2, orientation:4, edge:499 };
+
+// THE EDGE — the coin lands on its rim. This is COINFLIP's green zero: it sweeps
+// the table (side, orientation and spin ALL lose) which is the only thing that
+// creates a house edge, and it is uniform across every axis. Priced the way
+// roulette prices its zero — N-1 on N, i.e. 499x on a 1-in-500 shot, not 500x —
+// so the Edge bet carries exactly the same 0.20% as everything else.
+const EDGE_P = 1/500;
+
+// ---- the two presets ------------------------------------------------------
+// The Spread SLIDER is gone. It was EV-flat per flip but not over a career, its
+// midpoint was near the worst setting, and it collapsed three orthogonal
+// questions about the coin onto a single "how long are the odds" axis. In its
+// place, two structurally different bets — not two stops on one dial:
+//
+//   SPREAD  the wallet is split so EVERY call that lands pays the same
+//           K x wallet, K = 1 / sum(1/mult). Many small results.
+//   RIDE    one compound call. All of it must land, priced on the TRUE joint
+//           probability. One huge result, rarely.
+//
+// The point of the pair is that risk and reward are both legible: each shows
+// its chance of paying NOTHING beside its BEST CASE, live, as you build.
+let betMode = 'spread';                  // 'spread' | 'ride'
+
+// The outcome space, enumerated exactly: 32 spin values x 4 quadrants, plus the
+// rim. 129 atoms is nothing to walk, and walking it is the only honest way to
+// price RIDE — because SIDE IS NOT INDEPENDENT OF SPIN. Side is spin parity read
+// against the shown start face, so "Heads" and "exactly 10.0 rotations" is one
+// call wearing two hats. Multiplying the marginals would post 256x on a bet
+// whose true price is 128x, and hand that 2x away every day forever.
+const QUADRANTS = ['NE','SE','SW','NW'];
+function atomsFor(startFace){
+  const out=[], startHeads = startFace==='Heads';
+  for(const sp of SPIN_VALUES) for(const q of QUADRANTS)
+    out.push({ p:(1-EDGE_P)/(SPIN_N*QUADRANTS.length), spins:sp, quadrant:q,
+               side:((sp%2===0)===startHeads)?'Heads':'Tails', edge:false });
+  out.push({ p:EDGE_P, edge:true });     // the rim sweeps the table
+  return out;
+}
+
+async function sha(str){
+  const b=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+const big=(hex,bits=32)=>BigInt('0x'+hex.slice(0,bits/4));
+
+async function resolveFlip(seed){
+  const startHeads=(big(await sha('start::'+seed),8)%2n)===0n;
+  const idx=Number(big(await sha('spins::'+seed),32)%BigInt(SPIN_N));
+  const spins=SPIN_VALUES[idx];
+  const landsHeads=(spins%2===0)?startHeads:!startHeads;
+  // ORIENTATION = the angle the coin's face is turned to once it settles. It is
+  // about the coin itself, never where on the table it came to rest — that axis
+  // was deliberately cut. Two decimals: the displayed hundredths ARE the truth.
+  // Quadrants are just the coarse buckets the current UI bets on.
+  const orientationDeg=Number(big(await sha('orient::'+seed),64)%36000n)/100;   // 0..359.99
+  const QUADS=['NE','SE','SW','NW'];
+  const quadrant=QUADS[Math.floor(orientationDeg/90)];
+  // the rim landing. rare, and it sweeps everything else off the table.
+  const edge=(Number(big(await sha('edge::'+seed),64)%100000n)/100000) < EDGE_P;
+  return { startFace:startHeads?'Heads':'Tails', side:landsHeads?'Heads':'Tails', spins, orientationDeg, quadrant, edge };
+}
+
+// ---- state ---------------------------------------------------------------
+// WALLET vs BANK. The wallet is always fully at risk — there is no stake field,
+// your stake IS whatever you did not bank. You may bank down to WALLET_FLOOR but
+// never below it, so the wallet can only reach 0 by LOSING. That keeps the free
+// Broke Flip a safety net for busting rather than a payout you can trigger by
+// emptying the wallet on purpose.
+// Banking is gated on the cooldown timer: you commit your stake BEFORE the timer
+// reaches 00 and cannot change it once the flip is live. So the two are exactly
+// exclusive — timer running means bank yes / flip no, timer at 00 means the
+// reverse. The preview does NOT auto-start the cooldown after a flip so you can
+// keep flipping freely; use the debug buttons to drive the timer by hand.
+const WALLET_FLOOR=50;
+let timerEnd=0;                                   // epoch ms; 0 or past == "00"
+function timerRunning(){ return Date.now() < timerEnd; }
+function fmtTimer(){
+  if(!timerRunning()) return '00';
+  const s=Math.max(0, Math.ceil((timerEnd-Date.now())/1000));
+  return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+}
+
+let player=load()||{balance:0,history:[]};
+player.bank = player.bank || 0;
+let day=player.history.length;
+let bet={}; // { side, spins:{line,mode}, orientation }
+let brokePick=null;  // the heads/tails call on a Broke Flip
+// The face showing before the flip. RIDE is priced against it, because side is
+// spin PARITY read against this face — change it and the joint odds change.
+let shownStart='Heads';
+
+function save(){ try{ localStorage.setItem('coinflip', JSON.stringify(player)); }catch{} }
+function load(){ try{ return JSON.parse(localStorage.getItem('coinflip')); }catch{ return null; } }
+const $=s=>document.querySelector(s);
+
+// ---- refresh / coin ------------------------------------------------------
+// you choose the amount; the cap is whatever sits above the floor
+function bankMax(){ return Math.max(0, Math.round(player.balance) - WALLET_FLOOR); }
+function canBank(){ return bankMax()>0 && timerRunning(); }   // only during cooldown
+function doBank(){
+  // enforce the gate in LOGIC, not just CSS — pointer-events:none stops a mouse
+  // click but not Enter in the field, so the rule has to hold here too
+  if(!canBank()) return;
+  const max=bankMax(); if(max<=0) return;
+  let amt=Math.floor(parseFloat($('#bankInput').value)||0);
+  if(amt<=0) return;
+  amt=Math.min(amt, max);                           // never breach the floor
+  player.bank += amt; player.balance -= amt; save();
+  $('#bankInput').value='';
+  refresh({keep:true});
+}
+function syncMoney(){
+  $('#bal').textContent=Math.round(player.balance).toLocaleString('en-US');
+  $('#bankAmt').textContent=Math.round(player.bank).toLocaleString('en-US');
+  const max=bankMax();
+  $('#bankInput').max=max;
+  $('#bankInput').placeholder=max;                  // shows the cap without extra copy
+  $('#bankCtl').classList.toggle('off', !canBank());
+  $('#stake').textContent=Math.round(player.balance).toLocaleString('en-US');  // the wallet IS the stake
+}
+
+async function refresh(opts){
+  syncMoney();
+  updateFinal();
+  updateFlipLock();
+  if(opts && opts.keep) return;   // balance only — board stays exactly as it is
+  const broke=player.balance<=0;
+  $('#brokeScreen').style.display=broke?'block':'none';
+  $('#form').style.display=broke?'none':'block';
+  $('#betbar').style.display=broke?'none':'flex';
+  const start=await previewStart();
+  shownStart=start;                 // RIDE's joint odds are priced against it
+  if(broke){
+    renderCoin(start,'#coinVisBroke'); $('#spinCounterBroke').textContent='';
+    if(!(opts && opts.keepPick)){
+      brokePick=null;
+      document.querySelectorAll('#broke-choices .pickB').forEach(o=>o.classList.remove('on','res-win','res-loss'));
+    }
+    updateBrokeLock();
+  }
+  else { renderCoin(start); setCounter(0); }
+  if(!broke) resetForm();
+}
+async function previewStart(){ const h=await sha('start::preview::day'+day); return (big(h,8)%2n===0n)?'Heads':'Tails'; }
+function renderCoin(face, sel='#coinVis'){
+  $(sel).innerHTML=`<div class="coin${face==='Tails'?' tails':''}"><div class="face front">HEADS</div><div class="face back">TAILS</div></div>`;
+}
+function setCounter(v, sel='#spinCounter'){ const el=$(sel); if(el) el.textContent='spin: '+v.toFixed(1); }
+
+// animate a lite flip: swap heads/tails in succession, one swap per half-flip,
+// ticking the spin counter by 0.5 each swap, landing on flip.side at flip.spins.
+// displayed spin value = half-flips / 2 (full rotations, e.g. 19 half-flips = 9.5)
+function playFlip(flip, coinSel='#coinVis', counterSel='#spinCounter'){
+  return new Promise(resolve=>{
+    const halfFlips=flip.spins;            // integer 8–40
+    let curHeads=(flip.startFace==='Heads');
+    renderCoin(flip.startFace, coinSel);
+    setCounter(0, counterSel);
+    let i=0;
+    const delayAt=k=>{
+      const t=k/halfFlips;                 // 0..1 progress
+      return 60 + Math.pow(t,3)*260;       // 60ms → ~320ms near the end
+    };
+    function step(){
+      const c=$(coinSel+' .coin');
+      curHeads=!curHeads;                  // one half-flip = one face swap
+      if(c) c.classList.toggle('tails', !curHeads);
+      i++;
+      setCounter(i/2, counterSel);         // +0.5 per half-flip
+      if(i>=halfFlips){
+        if(c) c.classList.toggle('tails', flip.side!=='Heads');
+        setCounter(halfFlips/2, counterSel);
+        setTimeout(resolve, 300);
+        return;
+      }
+      setTimeout(step, delayAt(i));
+    }
+    setTimeout(step, delayAt(0));
+  });
+}
+
+// ---- vertical form: reveal + lock as you go ------------------------------
+// aspect order: side(0) -> spins(1) -> direction(2) -> stake
+// Pattern: click a text option; the UNPICKED siblings fade out, the picked one
+// stays in place as the greyed record. The aspect greys (.locked) and shows mult.
+function resetForm(){
+  clearReveal();
+  bet={};
+  ['side','orient'].forEach(k=>unlockChoices(k));
+  unlockChoices('spins');
+  hideAspect('spins'); hideAspect('orient');
+  $('#spinLine').value=''; updateDeadSides(NaN); clearDial();
+  hideAspect('spread');
+  betMode='spread';            // default: split it. RIDE is the deliberate choice.
+  updateRail(0);
+  updateFinal();
+}
+function unlockChoices(suffix){
+  const a=$('#a-'+suffix);
+  a.classList.remove('locked');
+  a.querySelectorAll('.opt').forEach(o=>o.classList.remove('on','dead'));
+  $('#m-'+suffix).textContent='';
+}
+function lockAspect(suffix, mult){
+  $('#a-'+suffix).classList.add('locked');
+  $('#m-'+suffix).classList.remove('hidden');
+  $('#m-'+suffix).textContent=fmtMult(mult)+'×';   // right column = this row's multiplier
+}
+// Selection is COLOUR, not disappearance: the pick goes blue, its siblings stay
+// grey and readable so you can always see what else was on offer.
+function selectOne(groupSel, chosenEl){
+  document.querySelectorAll(groupSel+' .opt').forEach(o=>o.classList.toggle('on', o===chosenEl));
+}
+function revealAspect(suffix){
+  $('#a-'+suffix).classList.remove('hidden');
+  if(suffix==='spread') return;                  // the spread row carries no dot
+  const idx = suffix==='orient'?1 : suffix==='spins'?2 : suffix==='side'?0 : 3;
+  dotOf(idx)?.classList.remove('hidden');
+}
+function hideAspect(suffix){
+  $('#a-'+suffix).classList.add('hidden');
+  $('#m-'+suffix).classList.add('hidden');
+  if(suffix==='spread') return;
+  const idx = suffix==='orient'?1 : suffix==='spins'?2 : suffix==='side'?0 : 3;
+  dotOf(idx)?.classList.add('hidden');
+}
+function dotOf(idx){ return document.querySelector('.dot[data-idx="'+idx+'"]'); }
+
+function updateRail(currentIdx){
+  document.querySelectorAll('.dot').forEach(dot=>{
+    const i=+dot.dataset.idx;
+    dot.classList.remove('current','clickable');
+    if(i===currentIdx) dot.classList.add('current');
+    else if(isChosen(i)) dot.classList.add('clickable');
+  });
+}
+function isChosen(i){ return i===0?!!bet.side : i===1?!!bet.orientation : i===2?!!bet.spins : false; }
+
+// SIDE
+document.querySelectorAll('#side-choices .pick').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    bet.side=b.dataset.val;
+    selectOne('#side-choices', b);
+    lockAspect('side', sideMult());
+    revealAspect('orient'); revealAspect('spins'); revealAspect('spread');
+    // Edge takes the whole stake, so the other axes go inert
+    const allIn = bet.side==='Edge';
+    if(allIn){ bet.orientation=undefined; bet.spins=undefined; clearDial();
+               unlockChoices('orient'); $('#spinLine').value=''; syncSpins(); }
+    ['orient','spins','spread'].forEach(k=>$('#a-'+k).classList.toggle('void', allIn));
+    updateRail(1); updateFinal();
+  });
+});
+
+// SPINS — the typed line IS the bet. Alone it's an exact call (32×). Adding
+// "higher"/"lower" widens it to every outcome above/below that line: safer, so
+// the multiplier drops. Multiplier is always poolSize / winning-outcomes, i.e.
+// the fair price of whatever you just covered — one rule for all three shapes.
+function spinPool(){ return SPIN_VALUES.map(toRot); }   // 32 values, in rotations
+function countFor(line, mode, pool){
+  return mode==='gt' ? pool.filter(x=>x>line).length
+       : mode==='lt' ? pool.filter(x=>x<line).length
+       :               pool.filter(x=>x===line).length;
+}
+// 0 means the bet covers nothing and can never win (line at either extreme).
+function spinMultFor(line, mode, pool=spinPool()){
+  const c=countFor(line, mode, pool);
+  return c ? pool.length/c : 0;
+}
+// lines are ROTATIONS: any half-rotation step in 4..20; 12 is unattainable.
+//
+// ACCEPT ANY SPELLING OF A HALF STEP. This used to be /^\d+(\.5)?$/, which
+// rejected "10.0" — the exact string the game puts on screen. The live counter
+// reads "spin: 10.0" and a lost line reports "10.0", so the player reads a
+// value off the display, types it straight back, and gets silence: no
+// multiplier, no bet, and nothing saying why. A validator that refuses the
+// program's own output format is never the player's mistake.
+function validLine(s){
+  if(!/^\d+(\.\d+)?$/.test(s)) return false;
+  const v=parseFloat(s);
+  if(!Number.isFinite(v)) return false;
+  if(Math.abs(v*2-Math.round(v*2))>1e-9) return false;   // must land on a half step
+  const r=Math.round(v*2)/2;
+  return r>=ROT_MIN && r<=ROT_MAX && r!==ROT_MEDIAN;
+}
+// the canonical half-step the typed text means, so 10.00 and 10.0 are one line
+function lineValue(s){ return Math.round(parseFloat(s)*2)/2; }
+function spinMode(){ return document.querySelector('#spins-choices .pick2.on')?.dataset.val || 'exact'; }
+function clearSpins(){
+  bet.spins=undefined;
+  unlockChoices('spins');
+  $('#m-spins').textContent='';
+  updateRail(2); updateFinal();
+}
+// a line at either end leaves one modifier covering nothing — block it outright
+function updateDeadSides(line){
+  document.querySelectorAll('#spins-choices .pick2').forEach(b=>{
+    const dead = !isNaN(line) && spinMultFor(line, b.dataset.val)===0;
+    b.classList.toggle('dead', dead);
+    if(dead) b.classList.remove('on');
+  });
+}
+// live: a valid line commits the bet as you type; modifiers refine it
+function syncSpins(){
+  if($('#a-spins').classList.contains('void')){ bet.spins=undefined; return; }
+  const raw=$('#spinLine').value.trim();
+  if(!validLine(raw)){
+    bet.spins=undefined; updateDeadSides(NaN);
+    $('#a-spins').classList.remove('locked'); $('#m-spins').textContent='';
+    updateRail(2); updateFinal(); return;
+  }
+  const line=lineValue(raw);
+  updateDeadSides(line);
+  const mode=spinMode();
+  bet.spins={line, mode};
+  lockAspect('spins', spinMultFor(line, mode));
+  updateRail(2); updateFinal();
+}
+document.querySelectorAll('#spins-choices .pick2').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    if(b.classList.contains('dead')) return;
+    const wasOn=b.classList.contains('on');
+    document.querySelectorAll('#spins-choices .pick2').forEach(o=>o.classList.remove('on'));
+    if(!wasOn) b.classList.add('on');   // clicking the active one drops back to exact
+    syncSpins();
+  });
+});
+// picking a preset re-prices the whole board, so the Total updates live
+document.querySelectorAll('#a-spread .mode').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    if($('#a-spread').classList.contains('void')) return;
+    if(b.classList.contains('dead')) return;
+    betMode = b.dataset.mode;
+    updateFinal();
+  });
+});
+
+$('#spinLine').addEventListener('input', syncSpins);
+$('#spinLine').addEventListener('keydown', e=>{
+  if(e.key!=='Enter') return;
+  e.preventDefault();
+  if(bet.spins) $('#spinLine').blur();   // nothing to advance to — the stake is fixed
+});
+
+// DIRECTION — multi-select: toggle any number of quadrants, multiplier is live.
+// fair multiplier = 4 / (quadrants selected); 0 or 4 selected = no upgrade (1×)
+function orientSel(){ return bet.orientation || []; }
+function orientMult(){ const k=orientSel().length; return (k===0||k===4) ? 1 : 4/k; }
+function fmtMult(m){ return Number.isInteger(m) ? m : Math.round(m*100)/100; }
+
+// Drag to paint. The first quadrant you press sets the mode for the whole hold —
+// press an unlit one and you're filling in, press a lit one and you're wiping out
+// — and everything you swipe across gets that same treatment. Retracing does NOT
+// undo (tried it; a stroke that erases itself feels worse than one that commits).
+// A plain click is just a drag of length zero, so single-toggling still works.
+let painting=null;                       // null | true (filling) | false (wiping)
+function setQuad(d, on){
+  const sel=orientSel().slice();
+  const at=sel.indexOf(d);
+  if(on && at<0) sel.push(d);
+  else if(!on && at>=0) sel.splice(at,1);
+  else return;                           // already in the wanted state
+  bet.orientation = sel.length ? sel : undefined;
+  renderDial();
+  updateOrientMults();
+}
+document.querySelectorAll('#dial .quad').forEach(p=>{
+  const d=p.dataset.quad;
+  p.addEventListener('mouseenter', ()=>{ if(painting===null && !orientSel().includes(d)) p.style.transform='scale(1.12)'; });
+  p.addEventListener('mouseleave', ()=>{ if(painting===null && !orientSel().includes(d)) p.style.transform='scale(1)'; });
+  p.addEventListener('pointerdown', e=>{
+    if($('#a-orient').classList.contains('void')) return;   // Edge owns the whole stake
+    e.preventDefault();
+    painting = !orientSel().includes(d);
+    setQuad(d, painting);
+  });
+  p.addEventListener('pointerenter', ()=>{
+    if(painting===null) return;
+    if($('#a-orient').classList.contains('void')) return;
+    setQuad(d, painting);
+  });
+});
+window.addEventListener('pointerup', ()=>{ painting=null; });
+window.addEventListener('pointercancel', ()=>{ painting=null; });
+// Adjacent pairs sit either side of a cross line, so together they ARE that
+// cardinal direction — two diagonals become one arrow on their shared edge.
+// Opposite pairs (N+S, E+W) share no edge and keep their own arrows.
+const MERGE={           // keys are the two quadrant names sorted and joined
+  NENW:{deg:0,   x:80, y:35 },   // NE + NW = up    = N
+  NESE:{deg:90,  x:125,y:80 },   // NE + SE = right = E
+  SESW:{deg:180, x:80, y:125},   // SE + SW = down  = S
+  NWSW:{deg:270, x:35, y:80 },   // NW + SW = left  = W
+};
+function renderArrows(sel){
+  const S=new Set(sel);
+  let merged=null; const hide=new Set();
+  const tryMerge=(a,b)=>{
+    if(!(S.has(a)&&S.has(b))) return false;
+    merged=MERGE[[a,b].sort().join('')]; hide.add(a); hide.add(b); return true;
+  };
+  // A selected adjacent pair collapses to its cardinal. With three quadrants
+  // there is always exactly one complete horizontal side (NE+SE or NW+SW) —
+  // merge that, and the odd quadrant keeps its own diagonal. So NE+SE+NW reads
+  // as a right arrow plus the lone NW diagonal.
+  if(sel.length===2) tryMerge('NE','SE')||tryMerge('SE','SW')||tryMerge('SW','NW')||tryMerge('NW','NE');
+  else if(sel.length===3) tryMerge('NE','SE')||tryMerge('NW','SW');
+  document.querySelectorAll('#dial-arrows [data-arrow]').forEach(g=>{
+    g.style.display = hide.has(g.dataset.arrow) ? 'none' : '';
+  });
+  const el=$('#dial-merged');
+  if(merged){ el.setAttribute('transform','translate('+merged.x+','+merged.y+') rotate('+merged.deg+')'); el.style.display=''; }
+  else el.style.display='none';
+}
+function renderDial(){
+  const sel=orientSel();
+  document.querySelectorAll('#dial .quad').forEach(p=>{
+    const on=sel.includes(p.dataset.quad);
+    p.setAttribute('fill', on?'#9ec1f5':'transparent');   // --sel-soft; selected reads blue
+    p.style.transform = on?'scale(1.12)':'scale(1)';
+  });
+  renderArrows(sel);
+}
+function clearDial(){
+  document.querySelectorAll('#dial .quad').forEach(p=>{ p.setAttribute('fill','transparent'); p.style.transform='scale(1)'; });
+  renderArrows([]);
+}
+// direction upgrades the SIDE bet, so both rows update together
+function updateOrientMults(){
+  const k=orientSel().length;
+  if(k>0){ $('#a-orient').classList.add('locked'); $('#m-orient').classList.remove('hidden'); $('#m-orient').textContent=fmtMult(orientMult())+'×'; }
+  else { $('#a-orient').classList.remove('locked'); $('#m-orient').textContent=''; }
+  updateFinal(); updateRail(1);
+}
+
+// rail click -> revise a chosen aspect (unlock it and everything after)
+document.querySelectorAll('.dot').forEach(dot=>{
+  dot.addEventListener('click', ()=>{
+    const i=+dot.dataset.idx;
+    if(!isChosen(i)) return;
+    reviseFrom(i);
+  });
+});
+function reviseFrom(i){
+  // order: 0=Side, 1=Orientation, 2=Spins. Clear this step + all later, reopen this one.
+  if(i<=0){
+    bet.side=undefined; unlockChoices('side');
+  }
+  if(i<=1){
+    bet.orientation=undefined; clearDial();
+    if(bet.side) lockAspect('side', sideMult());
+    if(i===1){ unlockChoices('orient'); }   // reopen direction
+    else { hideAspect('orient'); }
+  }
+  if(i<=2){
+    bet.spins=undefined; $('#spinLine').value=''; updateDeadSides(NaN);
+    if(i===2){ unlockChoices('spins'); } // reopen spins
+    else { hideAspect('spins'); }
+  }
+  if(i===0) hideAspect('spread');
+  updateRail(i); updateFinal();
+}
+
+// ---- itemization + multiplier display ------------------------------------
+
+// ---- resolve + flip ------------------------------------------------------
+// THREE INDEPENDENT BETS, each resolving on its own. Orientation does NOT
+// multiply Side, and Spin is not a fixed pair of values — it's priced from the
+// line you type. (Both of those are superseded models; do not reintroduce them.)
+// Edge is the coin's third side, so it lives in the Side row and is priced there
+function sideMult(){ return bet.side==='Edge' ? MULT.edge : MULT.side; }
+function spinsMult(){ return !bet.spins ? 0 : spinMultFor(bet.spins.line, bet.spins.mode); } // priced from the line
+
+// The entered amount IS the total risk and SPLITS evenly across the bets placed
+// (3 bets, 100 entered -> 33.33 each), so the Total × is the AVERAGE of the row
+// multipliers, never the sum.
+// The calls actually on the board. Edge takes the whole wallet and locks the
+// other axes out, so it is its own board of one.
+function placedBets(){
+  if(bet.side==='Edge') return [{ key:'side', mult:MULT.edge }];
+  const list=[];
+  if(bet.side)            list.push({ key:'side',   mult:sideMult() });
+  if(orientSel().length)  list.push({ key:'orient', mult:orientMult() });
+  if(bet.spins)           list.push({ key:'spins',  mult:spinsMult() });
+  // A 1x "bet" hands the wallet straight back whatever the coin does — covering
+  // all four quadrants is a refund, not a wager, so it never takes a share.
+  return list.filter(x=>x.mult>1);
+}
+
+// SPREAD. Weights go as 1/mult, which is the ONLY split where every call that
+// lands pays the same: back a 32x line with a sliver and a 2x call with the
+// bulk, sized so both come home identical. K is that shared payout.
+//   K = 1 / sum(1/mult)
+// It also removes "right but poorer" wherever K >= 1 — with an even split,
+// calling the coin correctly LOST you a third of the wallet 36% of the time,
+// because the long shot you also placed ate the rest.
+function spreadWeights(mults){
+  const inv=mults.map(m=>1/m), t=inv.reduce((a,b)=>a+b,0);
+  return inv.map(v=>v/t);
+}
+function spreadK(){
+  const b=placedBets();
+  return b.length ? 1/b.map(x=>1/x.mult).reduce((a,c)=>a+c,0) : 0;
+}
+
+// RIDE. One compound call, priced on the true joint probability of every placed
+// call landing together — NOT the product of their multipliers. The rim is left
+// out of the pricing on purpose: it sweeps the table, and that sweep IS the
+// house edge, so leaving it out here keeps RIDE on the same uniform 0.20%.
+function rideProb(){
+  const b=placedBets();
+  if(!b.length) return 0;
+  if(bet.side==='Edge') return EDGE_P;
+  let n=0;
+  for(const a of atomsFor(shownStart)){
+    if(a.edge) continue;
+    if(b.every(x=>winOf(x,a))) n++;
+  }
+  return n/(SPIN_N*QUADRANTS.length);
+}
+function rideMult(){
+  if(bet.side==='Edge') return MULT.edge;
+  const p=rideProb();
+  return p>0 ? 1/p : 0;
+}
+
+// What each preset is actually offering, in the two numbers that matter: how
+// often it pays NOTHING, and the best it can do. The ladder this replaced showed
+// only the second, so being more specific read as a free upgrade.
+function modeStats(){
+  const b=placedBets();
+  if(!b.length) return null;
+  let sNothing=0, rNothing=0;
+  for(const a of atomsFor(shownStart)){
+    const hits=b.map(x=>winOf(x,a));
+    if(!hits.some(Boolean)) sNothing+=a.p;
+    if(!hits.every(Boolean)) rNothing+=a.p;
+  }
+  return { spread:{ nothing:sNothing, best:spreadK()*b.length },
+           ride:{   nothing:rNothing, best:rideMult() } };
+}
+
+function portions(){
+  const b=placedBets();
+  if(!b.length) return [];
+  if(betMode==='ride'){ b.forEach(x=>{ x.w=0; }); return b; }
+  const w=spreadWeights(b.map(x=>x.mult));
+  b.forEach((x,i)=>{ x.w=w[i]; });
+  return b;
+}
+// a rim landing sweeps the table — the only thing that can win is calling Edge
+function winOf(x, flip){
+  if(x.key==='side') return resolveSide(flip);
+  if(flip.edge) return false;
+  return x.key==='orient' ? resolveOrient(flip) : resolveSpins(flip);
+}
+// the actual B riding on each line. RIDE has no split, so it shows none.
+function syncAmounts(p){
+  const stake=player.balance;
+  const by=Object.fromEntries(p.map(x=>[x.key, x.w*stake]));
+  [['side','#amt-side'],['orient','#amt-orient'],['spins','#amt-spins']].forEach(([k,sel])=>{
+    const el=$(sel); if(!el) return;
+    el.textContent = (betMode==='ride' || by[k]===undefined)
+      ? '' : '₿ '+Math.round(by[k]).toLocaleString('en-US');
+  });
+}
+function updateFinal(){
+  const p=portions();
+  syncAmounts(p);
+  const st=modeStats();
+  document.querySelectorAll('#a-spread .mode').forEach(el=>{
+    el.classList.toggle('on', el.dataset.mode===betMode);
+  });
+  const show=(sel,d)=>{
+    const el=$(sel); if(!el) return;
+    el.textContent = d ? 'nothing '+Math.round(d.nothing*100)+'%   best '
+      + Math.round(d.best*player.balance).toLocaleString('en-US')+' ₿' : '';
+  };
+  // A RIDE can be built that cannot possibly land: side IS spin parity, so
+  // calling Heads next to an odd-rotation line asks the coin to do two
+  // contradictory things. Half of all side + exact-spin pairings are dead this
+  // way. Grey it out rather than letting someone spend their one daily flip on
+  // an unwinnable bet — same treatment the dead higher/lower modifiers get.
+  const rideDead = !!st && st.ride.best===0;
+  const rideEl = document.querySelector('#a-spread .mode[data-mode="ride"]');
+  if(rideEl) rideEl.classList.toggle('dead', rideDead);
+  if(rideDead && betMode==='ride'){ betMode='spread';
+    document.querySelectorAll('#a-spread .mode').forEach(el=>
+      el.classList.toggle('on', el.dataset.mode==='spread')); }
+  show('#stat-spread', st && st.spread);
+  show('#stat-ride',   st && st.ride);
+  if(!p.length){ $('#finalMult').textContent='0'; updateFlipLock(); return; }
+  $('#finalMult').textContent = fmtMult(betMode==='ride' ? rideMult() : spreadK());
+  updateFlipLock();
+}
+function resolveSide(flip){
+  return bet.side==='Edge' ? !!flip.edge : (!flip.edge && bet.side===flip.side);
+}
+function resolveOrient(flip){ return orientSel().includes(flip.quadrant); }
+// ---- staged result reveal -------------------------------------------------
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+
+// How much ceremony a single line's move has earned. Duration and pulse were
+// fixed, so a +0.9 nudge (1.03× line) got the same 700ms and 16% swell as a
+// +930 exact hit. Magnitude is measured against the STAKE rather than the
+// multiplier, so the stake split is accounted for: 32× on a third of the stake
+// and 32× as your only bet both read as huge, correctly.
+// Log-normalised — the magnitude range spans ~3 orders of magnitude, and a
+// linear ramp would flatten everything below ~5× into one indistinguishable blur.
+const DRAMA={ mMin:0.01, mMax:31, durMin:260, durMax:1100, pulseMin:0.04, pulseMax:0.28 };
+function dramaOf(delta, stake){
+  const m = stake>0 ? Math.abs(delta)/stake : 0;
+  const lo=Math.log(DRAMA.mMin), hi=Math.log(DRAMA.mMax);
+  const k = Math.min(1, Math.max(0, (Math.log(Math.max(m, DRAMA.mMin))-lo)/(hi-lo)));
+  return { ms: DRAMA.durMin + k*(DRAMA.durMax-DRAMA.durMin),
+           pulse: DRAMA.pulseMin + k*(DRAMA.pulseMax-DRAMA.pulseMin),
+           // the fixed per-row choreography dominated the reveal (520 slide + 160
+           // + 320 tail = 1s a row regardless), so scale it by weight too
+           scale: 0.45 + k*0.75 };
+}
+
+// Scoring colour is a GRADIENT, not a binary. Saturation tracks distance from
+// break-even: level with the stake is neutral grey, and it reaches full strength
+// at a whole stake won or lost — running = 2×stake, or running = 0. Past that it
+// clamps, so a 32× hit is simply full green rather than something louder.
+const C_WIN=[26,158,63], C_LOSS=[209,45,45], C_LEVEL=[154,154,154], C_EDGE=[139,74,214];
+function positionColour(value, stake, isEdge){
+  if(!(stake>0)) return '';
+  const t=(value-stake)/stake;                    // profit, in units of the stake
+  const s=Math.min(1, Math.abs(t));
+  const to = t>=0 ? (isEdge?C_EDGE:C_WIN) : C_LOSS;   // a rim landing reads purple, never green
+  return 'rgb('+C_LEVEL.map((n,i)=>Math.round(n+(to[i]-n)*s)).join(',')+')';
+}
+
+// slot-machine count-up in the Total row; number grows as it climbs, by weight,
+// and deepens in colour as it pulls away from break-even
+function countUp(from, to, ms, pulse=0.16, stake=0, isEdge=false){
+  return new Promise(res=>{
+    const el=$('#stepTotal');
+    const t0=performance.now();
+    requestAnimationFrame(function step(now){
+      const t=Math.min(1,(now-t0)/ms);
+      const e=1-Math.pow(1-t,3);
+      const v=from+(to-from)*e;
+      el.textContent='₿ '+Math.round(v).toLocaleString('en-US');
+      el.style.color=positionColour(v, stake, isEdge);
+      el.style.transform='scale('+(1+pulse*Math.sin(t*Math.PI))+')';
+      if(t<1) requestAnimationFrame(step);
+      else { el.style.transform='scale(1)'; res(); }
+    });
+  });
+}
+
+// mark a text option win/loss — res-* colours override the blue selection
+function markOpt(el, won){
+  if(!el) return;
+  el.classList.add(won?'res-win':'res-loss');
+}
+
+const amtCell = key => key==='side' ? '#amt-side' : key==='orient' ? '#amt-orient' : '#amt-spins';
+async function revealResults(flip, stake, p){
+  const tot=$('#stepTotal');
+  let running=stake;                    // starts at the WHOLE bet, then moves per line
+  let alive=true;                       // RIDE only: still in it
+  // sit in the amount column, in line with the per-row ₿ values — the running
+  // total IS the center-column number now, not a separate centred readout
+  tot.style.left=($('#stake').closest('.row-amt').offsetLeft)+'px';
+  tot.style.opacity='0';
+  tot.style.visibility='visible';
+  tot.textContent='₿ '+Math.round(running).toLocaleString('en-US');
+  tot.style.color=positionColour(running, stake, flip.edge);   // starts level, so neutral grey
+
+  for(const x of p){
+    const perBet=x.w*stake;             // this line's share, set by the spread slider
+    const row = x.key==='side' ? '#a-side' : x.key==='orient' ? '#a-orient' : '#a-spins';
+    const rowEl=$(row);
+    $(amtCell(x.key))?.classList.add('amt-hidden');   // the moving number replaces this row's static ₿
+
+    // weight the WHOLE beat, not just the count-up: a line that barely moves the
+    // money gets a quick slide and a short tail, a big hit gets room to breathe
+    const won=winOf(x, flip);
+    const delta = won ? perBet*(x.mult-1) : -perBet;
+    const d = dramaOf(delta, stake);
+    const slide=Math.round(520*d.scale), gap=Math.round(160*d.scale), tail=Math.round(320*d.scale);
+
+    // slide the readout down to this row, carrying the running total with it
+    tot.style.transitionDuration=slide+'ms, '+slide+'ms, 300ms';   // top, left, opacity
+    tot.style.top=(rowEl.offsetTop)+'px';
+    tot.style.opacity='1';
+    rowEl.classList.add('step-live');
+    await wait(slide);                     // let the slide land
+
+    if(x.key==='side'){
+      // only the CORRECT value grows; a wrong pick just turns red. Edge reads purple.
+      const picked=document.querySelector('#side-choices .pick[data-val="'+bet.side+'"]');
+      if(picked) picked.classList.add(won ? (bet.side==='Edge'?'res-edge':'res-win') : 'res-loss');
+      if(!won){
+        const truth = flip.edge ? 'Edge' : flip.side;
+        const el=document.querySelector('#side-choices .pick[data-val="'+truth+'"]');
+        if(el) el.classList.add(flip.edge?'res-edge':'res-win');
+      }
+    } else if(x.key==='orient'){
+      document.querySelectorAll('#dial .quad').forEach(q=>{ q.style.transform=''; });
+      orientSel().forEach(d=>{
+        const q=document.querySelector('#dial .quad[data-quad="'+d+'"]');
+        if(q && (flip.edge || d!==flip.quadrant)) q.classList.add('res-loss');
+      });
+      if(!flip.edge){
+        const hit=document.querySelector('#dial .quad[data-quad="'+flip.quadrant+'"]');
+        if(hit){ hit.classList.remove('res-loss'); hit.classList.add('res-win'); }
+      }
+    } else {
+      // the typed line is the pick — only it scales, and only when correct
+      $('#lineWrap').classList.add(won?'res-win':'res-loss');
+      const modeEl=document.querySelector('#spins-choices .pick2.on');
+      if(modeEl) markOpt(modeEl, won);
+      if(!won && !flip.edge){         // on a loss, show where it actually landed
+        const el=$('#spinLanded');
+        el.textContent=toRot(flip.spins).toFixed(1);
+        el.style.visibility='visible';
+      }
+    }
+
+    // the ROW multiplier still reports that line's own result — that part is right
+    const mcell = x.key==='side' ? '#m-side' : x.key==='orient' ? '#m-orient' : '#m-spins';
+    $(mcell).classList.add(won ? (bet.side==='Edge'&&x.key==='side' ? 'res-edge':'res-win') : 'res-loss');
+
+    // RIDE is one compound call, so the money does not move per line. It holds
+    // at the whole stake while the calls come in, and dies the instant one
+    // misses — the remaining rows still resolve, so you always see what the coin
+    // actually did, but you already know you are out. That beat, watching the
+    // rows keep landing after you are dead, is the point of riding.
+    if(betMode==='ride'){
+      if(!won && alive){
+        alive=false;
+        await wait(gap);
+        await countUp(running, 0, d.ms, d.pulse, stake, flip.edge);
+        running=0;
+      }
+      rowEl.classList.remove('step-live');
+      await wait(tail);
+      continue;
+    }
+
+    await wait(gap);
+    // win adds this line's profit; loss takes its portion away — never resets
+    const target = running + delta;
+    // The big number tracks POSITION, not this line. Colouring it per-line
+    // contradicted the actual result in 15 combinations — e.g. a 1.6× hit after
+    // two misses ended on 48 from a 90 stake and still read green. Colour is set
+    // per-frame inside countUp so it deepens as the number moves.
+    await countUp(running, target, d.ms, d.pulse, stake, flip.edge);
+    running = target;
+
+    rowEl.classList.remove('step-live');
+    await wait(tail);
+  }
+  // RIDE pays once, at the end, and only if every call landed.
+  if(betMode==='ride' && alive){
+    const target=stake*rideMult();
+    const d=dramaOf(target-running, stake);
+    await countUp(running, target, d.ms, d.pulse, stake, flip.edge);
+    running=target;
+  }
+  return Math.max(0, running);          // ends on the true total return
+}
+
+function clearReveal(){
+  document.querySelectorAll('.res-win,.res-loss,.res-edge').forEach(e=>e.classList.remove('res-win','res-loss','res-edge'));
+  document.querySelectorAll('.step-live').forEach(e=>e.classList.remove('step-live'));
+  const t=$('#stepTotal'); if(t){ t.style.visibility='hidden'; t.textContent='0'; t.style.color=''; }
+  const sl=$('#spinLanded'); if(sl){ sl.style.visibility='hidden'; sl.textContent=''; }
+  document.querySelectorAll('.row-amt.amt-hidden').forEach(e=>e.classList.remove('amt-hidden'));
+}
+
+function resolveSpins(flip){
+  // both sides in rotations — the unit the player typed and the counter showed
+  const landed=toRot(flip.spins), {line,mode}=bet.spins;
+  return mode==='gt' ? landed>line : mode==='lt' ? landed<line : landed===line;
+}
+
+// The coin is locked until there's a stake, a side pick, and enough bankroll.
+// the whole wallet always rides, so all that's needed is a side call
+function canFlip(){
+  if(timerRunning()) return false;     // stake is frozen once the flip goes live
+  if(player.balance<=0) return false;
+  if(!bet.side) return false;
+  // an unwinnable RIDE is not a bet, it is a donation
+  if(betMode==='ride' && rideMult()===0) return false;
+  return true;
+}
+// coin is inert until the bet is valid
+function updateFlipLock(){
+  const c=$('#coinVis'); if(c) c.classList.toggle('locked', !canFlip());
+}
+let flipping=false;
+async function doFlip(){
+  if(flipping) return;
+  if(!canFlip()) return;                 // locked until a bet is placed
+  flipping=true;
+  const stake=player.balance;          // no stake field — the wallet is the bet
+  const p=portions();
+
+  const seed=crypto.getRandomValues(new Uint32Array(4)).join('-');
+  const flip=await resolveFlip(seed);
+  await playFlip(flip);
+
+  const returned = await revealResults(flip, stake, p);   // staged, step by step
+  const lines=p.map(x=>`${x.key} ${fmtMult(x.mult)}× [${winOf(x,flip)?'WIN':'LOSS'}]`);
+  const totalRisk=stake;                                  // entered amount IS the risk
+  const startBalance=player.balance;
+  const endBalance=Math.round(startBalance-totalRisk+returned);
+  player.history.push({ startBalance, endBalance, totalStaked:totalRisk, bustedYesterday:false,
+    bets:p.map(x=>({stake:x.w*stake, payoutMultiple:x.mult, kind:x.key, won:winOf(x,flip)})) });
+  player.balance=endBalance; day=player.history.length; save();
+  renderResult(flip, startBalance, endBalance, lines, totalRisk);
+  // §4 keeps the board intact after a flip, but busting is now the COMMON case:
+  // with the whole wallet riding, a loss must drop straight to the broke screen or
+  // the coin just locks at 0 with no way to carry on.
+  await refresh(player.balance>0 ? {keep:true} : undefined);
+  flipping=false;
+}
+async function brokeFlip(){
+  if(flipping) return;
+  if(!brokePick) return;               // you have to call it, same as any other flip
+  if(timerRunning()) return;           // a broke flip IS the daily flip — same gate
+  flipping=true;
+  const seed=crypto.getRandomValues(new Uint32Array(4)).join('-');
+  const flip=await resolveFlip(seed);
+  // §2: heads/tails only, no upgrades. A rim landing still sweeps, same as anywhere.
+  const won=(!flip.edge && flip.side===brokePick);
+
+  await playFlip(flip, '#coinVisBroke', '#spinCounterBroke');
+  markOpt(document.querySelector('#broke-choices .pickB[data-val="'+brokePick+'"]'), won);
+  if(!won && !flip.edge) markOpt(document.querySelector('#broke-choices .pickB[data-val="'+flip.side+'"]'), true);
+
+  const endBalance=won?FREE_BET_RETURN:0;
+  player.history.push({ startBalance:0, endBalance, totalStaked:0, bustedYesterday:true, bets:[{stake:0,payoutMultiple:0,kind:'broke',side:brokePick,won}] });
+  player.balance=endBalance; day=player.history.length; save();
+
+  const res=$('#brokeResult');
+  if(won){ res.textContent='+50'; res.style.color='#1a9e3f'; }
+  else { res.textContent='0'; res.style.color='#d12d2d'; }
+
+  // winning takes you off the broke screen and back to the board; losing keeps
+  // you here with the result showing, so pick again to have another go
+  await refresh(player.balance>0 ? undefined : {keep:true});
+  flipping=false;
+}
+function renderResult(flip, sb, eb, lines, stake){
+  const block=document.createElement('div');
+  block.innerHTML=`<hr><p>shown <b>${flip.startFace}</b> → landed <b>${flip.side}</b>, spin: <b>${toRot(flip.spins).toFixed(1)}</b>, orientation: <b>${flip.orientationDeg.toFixed(2)}°</b> (${flip.quadrant})</p>
+    <p>${Math.round(sb)} → ${Math.round(eb)} ₿ (staked ${stake})</p><pre>${lines.join('\n')}</pre>`;
+  $('#out').prepend(block);
+}
+
+$('#debugReset').addEventListener('click', async ()=>{
+  player={balance:0, history:[], bank:0}; day=0; save();
+  $('#out').innerHTML='';
+  $('#brokeResult').textContent='';
+  clearReveal();
+  await refresh();
+});
+// BROKE FLIP — you still have to call heads or tails; the coin is inert until you do
+function updateBrokeLock(){ const c=$('#coinVisBroke'); if(c) c.classList.toggle('locked', !brokePick || timerRunning()); }
+document.querySelectorAll('#broke-choices .pickB').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    if(flipping) return;
+    document.querySelectorAll('#broke-choices .pickB').forEach(o=>o.classList.remove('res-win','res-loss'));
+    $('#brokeResult').textContent='';
+    brokePick=b.dataset.val;
+    selectOne('#broke-choices', b);
+    updateBrokeLock();
+  });
+});
+
+$('#bankBtn').addEventListener('click', doBank);
+$('#bankInput').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doBank(); } });
+$('#coinVis').addEventListener('click', doFlip);
+$('#coinVisBroke').addEventListener('click', brokeFlip);
+
+// Timer drives the bank/flip gate. Debug buttons move it by hand: "start timer"
+// opens a 60s cooldown (bank yes, flip no), "timer 00" makes the flip live again
+// (flip yes, bank no). Nothing auto-starts it, so you can flip as often as you like.
+function tickTimer(){
+  $('#timer').textContent=fmtTimer();
+  syncMoney(); updateFlipLock(); updateBrokeLock();
+}
+$('#dbgTimerStart').addEventListener('click', ()=>{ timerEnd=Date.now()+60000; tickTimer(); });
+$('#dbgTimerZero').addEventListener('click', ()=>{ timerEnd=0; tickTimer(); });
+setInterval(tickTimer, 500);
+
+refresh();
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+server/.dev.vars
+.env
+.env.local
+*.bak.html
+_*.mjs

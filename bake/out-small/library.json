@@ -1,0 +1,3892 @@
+{
+ "format": {
+  "version": 1,
+  "units": "metres, Y-up, gravity -9.81 m/s^2",
+  "frameTime": "milliseconds",
+  "framesPerSecond": 250,
+  "quat": "[x,y,z,w]",
+  "pos": "coin centre of mass, metres",
+  "canonical": "heads-face normal is +Y when heads-up; coin lies in the XZ plane",
+  "startFace": "ALL clips start HEADS-UP. Landing side follows from half-flip parity; the renderer pre-rotates 180 deg for a tails-up start and the landing face follows.",
+  "orientationDeg": "settled yaw of the coin: local +X taken to world, projected to XZ, measured clockwise from -Z, in [0,360). NOT table position.",
+  "quadrant": "N=[0,90) E=[90,180) S=[180,270) W=[270,360) of orientationDeg",
+  "settleAngleDeg": "identical to orientationDeg; retained for the original contract key",
+  "energy": "0..1 gentle->violent, rank-normalised within each cell for selectVariant()",
+  "halfFlips": "integers 8..40 excluding 24; player-facing spin = halfFlips/2"
+ },
+ "seed": "coinflip-bake-v1",
+ "perCell": 2,
+ "cellCount": 128,
+ "clips": 256,
+ "physics": {
+  "coin": {
+   "radius": 0.01025,
+   "halfHeight": 0.00075,
+   "mass": 0.00325,
+   "density": 6564.391862604448
+  },
+  "dt": 0.001,
+  "restitution": 0.3,
+  "friction": 0.6,
+  "linearDamping": 0.05,
+  "angularDamping": 0.05,
+  "solverIterations": 8,
+  "ccd": true,
+  "gravity": -9.81,
+  "table": "1 m square"
+ },
+ "launch": {
+  "y0": 0.22,
+  "vyMin": 0.9,
+  "vyMax": 3,
+  "vhMin": 0.05,
+  "vhMax": 0.45,
+  "spinYMax": 6,
+  "omegaMin": 55,
+  "omegaMax": 230
+ },
+ "cells": [
+  {
+   "cell": "8N",
+   "halfFlips": 8,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0133
+  },
+  {
+   "cell": "8E",
+   "halfFlips": 8,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0624
+  },
+  {
+   "cell": "8S",
+   "halfFlips": 8,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7168
+  },
+  {
+   "cell": "8W",
+   "halfFlips": 8,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.6503
+  },
+  {
+   "cell": "9N",
+   "halfFlips": 9,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.725
+  },
+  {
+   "cell": "9E",
+   "halfFlips": 9,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9646
+  },
+  {
+   "cell": "9S",
+   "halfFlips": 9,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9048
+  },
+  {
+   "cell": "9W",
+   "halfFlips": 9,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7054
+  },
+  {
+   "cell": "10N",
+   "halfFlips": 10,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7607
+  },
+  {
+   "cell": "10E",
+   "halfFlips": 10,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0169
+  },
+  {
+   "cell": "10S",
+   "halfFlips": 10,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9522
+  },
+  {
+   "cell": "10W",
+   "halfFlips": 10,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.824
+  },
+  {
+   "cell": "11N",
+   "halfFlips": 11,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7449
+  },
+  {
+   "cell": "11E",
+   "halfFlips": 11,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8505
+  },
+  {
+   "cell": "11S",
+   "halfFlips": 11,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9127
+  },
+  {
+   "cell": "11W",
+   "halfFlips": 11,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0912
+  },
+  {
+   "cell": "12N",
+   "halfFlips": 12,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7942
+  },
+  {
+   "cell": "12E",
+   "halfFlips": 12,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9086
+  },
+  {
+   "cell": "12S",
+   "halfFlips": 12,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8102
+  },
+  {
+   "cell": "12W",
+   "halfFlips": 12,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9049
+  },
+  {
+   "cell": "13N",
+   "halfFlips": 13,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.1326
+  },
+  {
+   "cell": "13E",
+   "halfFlips": 13,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0562
+  },
+  {
+   "cell": "13S",
+   "halfFlips": 13,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.903
+  },
+  {
+   "cell": "13W",
+   "halfFlips": 13,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8714
+  },
+  {
+   "cell": "14N",
+   "halfFlips": 14,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7318
+  },
+  {
+   "cell": "14E",
+   "halfFlips": 14,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8322
+  },
+  {
+   "cell": "14S",
+   "halfFlips": 14,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7125
+  },
+  {
+   "cell": "14W",
+   "halfFlips": 14,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8387
+  },
+  {
+   "cell": "15N",
+   "halfFlips": 15,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7909
+  },
+  {
+   "cell": "15E",
+   "halfFlips": 15,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0313
+  },
+  {
+   "cell": "15S",
+   "halfFlips": 15,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0987
+  },
+  {
+   "cell": "15W",
+   "halfFlips": 15,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9689
+  },
+  {
+   "cell": "16N",
+   "halfFlips": 16,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8536
+  },
+  {
+   "cell": "16E",
+   "halfFlips": 16,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8089
+  },
+  {
+   "cell": "16S",
+   "halfFlips": 16,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9581
+  },
+  {
+   "cell": "16W",
+   "halfFlips": 16,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9915
+  },
+  {
+   "cell": "17N",
+   "halfFlips": 17,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8135
+  },
+  {
+   "cell": "17E",
+   "halfFlips": 17,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9269
+  },
+  {
+   "cell": "17S",
+   "halfFlips": 17,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.941
+  },
+  {
+   "cell": "17W",
+   "halfFlips": 17,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.6511
+  },
+  {
+   "cell": "18N",
+   "halfFlips": 18,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7348
+  },
+  {
+   "cell": "18E",
+   "halfFlips": 18,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7333
+  },
+  {
+   "cell": "18S",
+   "halfFlips": 18,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7898
+  },
+  {
+   "cell": "18W",
+   "halfFlips": 18,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.171
+  },
+  {
+   "cell": "19N",
+   "halfFlips": 19,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8375
+  },
+  {
+   "cell": "19E",
+   "halfFlips": 19,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9005
+  },
+  {
+   "cell": "19S",
+   "halfFlips": 19,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.6844
+  },
+  {
+   "cell": "19W",
+   "halfFlips": 19,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8777
+  },
+  {
+   "cell": "20N",
+   "halfFlips": 20,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.6166
+  },
+  {
+   "cell": "20E",
+   "halfFlips": 20,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0435
+  },
+  {
+   "cell": "20S",
+   "halfFlips": 20,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0575
+  },
+  {
+   "cell": "20W",
+   "halfFlips": 20,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9096
+  },
+  {
+   "cell": "21N",
+   "halfFlips": 21,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9537
+  },
+  {
+   "cell": "21E",
+   "halfFlips": 21,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.898
+  },
+  {
+   "cell": "21S",
+   "halfFlips": 21,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0989
+  },
+  {
+   "cell": "21W",
+   "halfFlips": 21,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0698
+  },
+  {
+   "cell": "22N",
+   "halfFlips": 22,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0448
+  },
+  {
+   "cell": "22E",
+   "halfFlips": 22,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8773
+  },
+  {
+   "cell": "22S",
+   "halfFlips": 22,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8959
+  },
+  {
+   "cell": "22W",
+   "halfFlips": 22,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8348
+  },
+  {
+   "cell": "23N",
+   "halfFlips": 23,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0383
+  },
+  {
+   "cell": "23E",
+   "halfFlips": 23,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.687
+  },
+  {
+   "cell": "23S",
+   "halfFlips": 23,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.6827
+  },
+  {
+   "cell": "23W",
+   "halfFlips": 23,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0039
+  },
+  {
+   "cell": "25N",
+   "halfFlips": 25,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0052
+  },
+  {
+   "cell": "25E",
+   "halfFlips": 25,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9475
+  },
+  {
+   "cell": "25S",
+   "halfFlips": 25,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8472
+  },
+  {
+   "cell": "25W",
+   "halfFlips": 25,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0225
+  },
+  {
+   "cell": "26N",
+   "halfFlips": 26,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9958
+  },
+  {
+   "cell": "26E",
+   "halfFlips": 26,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9559
+  },
+  {
+   "cell": "26S",
+   "halfFlips": 26,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7018
+  },
+  {
+   "cell": "26W",
+   "halfFlips": 26,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7388
+  },
+  {
+   "cell": "27N",
+   "halfFlips": 27,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9631
+  },
+  {
+   "cell": "27E",
+   "halfFlips": 27,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.2474
+  },
+  {
+   "cell": "27S",
+   "halfFlips": 27,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.1582
+  },
+  {
+   "cell": "27W",
+   "halfFlips": 27,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8019
+  },
+  {
+   "cell": "28N",
+   "halfFlips": 28,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.979
+  },
+  {
+   "cell": "28E",
+   "halfFlips": 28,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0393
+  },
+  {
+   "cell": "28S",
+   "halfFlips": 28,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.2313
+  },
+  {
+   "cell": "28W",
+   "halfFlips": 28,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0878
+  },
+  {
+   "cell": "29N",
+   "halfFlips": 29,
+   "quadrant": "N",
+   "pool": 4,
+   "kept": 2,
+   "spread": 1.2112
+  },
+  {
+   "cell": "29E",
+   "halfFlips": 29,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7487
+  },
+  {
+   "cell": "29S",
+   "halfFlips": 29,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7816
+  },
+  {
+   "cell": "29W",
+   "halfFlips": 29,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9973
+  },
+  {
+   "cell": "30N",
+   "halfFlips": 30,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0137
+  },
+  {
+   "cell": "30E",
+   "halfFlips": 30,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7148
+  },
+  {
+   "cell": "30S",
+   "halfFlips": 30,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8401
+  },
+  {
+   "cell": "30W",
+   "halfFlips": 30,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9623
+  },
+  {
+   "cell": "31N",
+   "halfFlips": 31,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9354
+  },
+  {
+   "cell": "31E",
+   "halfFlips": 31,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0031
+  },
+  {
+   "cell": "31S",
+   "halfFlips": 31,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8325
+  },
+  {
+   "cell": "31W",
+   "halfFlips": 31,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.6627
+  },
+  {
+   "cell": "32N",
+   "halfFlips": 32,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.3531
+  },
+  {
+   "cell": "32E",
+   "halfFlips": 32,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9968
+  },
+  {
+   "cell": "32S",
+   "halfFlips": 32,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0502
+  },
+  {
+   "cell": "32W",
+   "halfFlips": 32,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.951
+  },
+  {
+   "cell": "33N",
+   "halfFlips": 33,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7009
+  },
+  {
+   "cell": "33E",
+   "halfFlips": 33,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.1378
+  },
+  {
+   "cell": "33S",
+   "halfFlips": 33,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8296
+  },
+  {
+   "cell": "33W",
+   "halfFlips": 33,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9759
+  },
+  {
+   "cell": "34N",
+   "halfFlips": 34,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7692
+  },
+  {
+   "cell": "34E",
+   "halfFlips": 34,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7767
+  },
+  {
+   "cell": "34S",
+   "halfFlips": 34,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8708
+  },
+  {
+   "cell": "34W",
+   "halfFlips": 34,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9683
+  },
+  {
+   "cell": "35N",
+   "halfFlips": 35,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0608
+  },
+  {
+   "cell": "35E",
+   "halfFlips": 35,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.5281
+  },
+  {
+   "cell": "35S",
+   "halfFlips": 35,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7126
+  },
+  {
+   "cell": "35W",
+   "halfFlips": 35,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8546
+  },
+  {
+   "cell": "36N",
+   "halfFlips": 36,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9325
+  },
+  {
+   "cell": "36E",
+   "halfFlips": 36,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.186
+  },
+  {
+   "cell": "36S",
+   "halfFlips": 36,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7601
+  },
+  {
+   "cell": "36W",
+   "halfFlips": 36,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.1822
+  },
+  {
+   "cell": "37N",
+   "halfFlips": 37,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.802
+  },
+  {
+   "cell": "37E",
+   "halfFlips": 37,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7804
+  },
+  {
+   "cell": "37S",
+   "halfFlips": 37,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7675
+  },
+  {
+   "cell": "37W",
+   "halfFlips": 37,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9291
+  },
+  {
+   "cell": "38N",
+   "halfFlips": 38,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9449
+  },
+  {
+   "cell": "38E",
+   "halfFlips": 38,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.677
+  },
+  {
+   "cell": "38S",
+   "halfFlips": 38,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.0243
+  },
+  {
+   "cell": "38W",
+   "halfFlips": 38,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.5957
+  },
+  {
+   "cell": "39N",
+   "halfFlips": 39,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7716
+  },
+  {
+   "cell": "39E",
+   "halfFlips": 39,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.6355
+  },
+  {
+   "cell": "39S",
+   "halfFlips": 39,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8415
+  },
+  {
+   "cell": "39W",
+   "halfFlips": 39,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.9252
+  },
+  {
+   "cell": "40N",
+   "halfFlips": 40,
+   "quadrant": "N",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.8361
+  },
+  {
+   "cell": "40E",
+   "halfFlips": 40,
+   "quadrant": "E",
+   "pool": 5,
+   "kept": 2,
+   "spread": 1.026
+  },
+  {
+   "cell": "40S",
+   "halfFlips": 40,
+   "quadrant": "S",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7032
+  },
+  {
+   "cell": "40W",
+   "halfFlips": 40,
+   "quadrant": "W",
+   "pool": 5,
+   "kept": 2,
+   "spread": 0.7562
+  }
+ ],
+ "index": [
+  {
+   "id": "8N-0-0",
+   "halfFlips": 8,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 9,
+   "durationMs": 601,
+   "settleAngleDeg": 9,
+   "energy": 0,
+   "energyRaw": 0.3052
+  },
+  {
+   "id": "8N-4-0",
+   "halfFlips": 8,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 81,
+   "durationMs": 765,
+   "settleAngleDeg": 81,
+   "energy": 1,
+   "energyRaw": 0.32
+  },
+  {
+   "id": "8E-2-0",
+   "halfFlips": 8,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 134.98,
+   "durationMs": 570,
+   "settleAngleDeg": 134.98,
+   "energy": 0,
+   "energyRaw": 0.2641
+  },
+  {
+   "id": "8E-4-0",
+   "halfFlips": 8,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 171,
+   "durationMs": 893,
+   "settleAngleDeg": 171,
+   "energy": 1,
+   "energyRaw": 0.3788
+  },
+  {
+   "id": "8S-4-0",
+   "halfFlips": 8,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 261.02,
+   "durationMs": 645,
+   "settleAngleDeg": 261.02,
+   "energy": 0,
+   "energyRaw": 0.2082
+  },
+  {
+   "id": "8S-1-0",
+   "halfFlips": 8,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 206.94,
+   "durationMs": 744,
+   "settleAngleDeg": 206.94,
+   "energy": 1,
+   "energyRaw": 0.2695
+  },
+  {
+   "id": "8W-4-0",
+   "halfFlips": 8,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 350.99,
+   "durationMs": 667,
+   "settleAngleDeg": 350.99,
+   "energy": 0,
+   "energyRaw": 0.2728
+  },
+  {
+   "id": "8W-1-0",
+   "halfFlips": 8,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 296.92,
+   "durationMs": 833,
+   "settleAngleDeg": 296.92,
+   "energy": 1,
+   "energyRaw": 0.2751
+  },
+  {
+   "id": "9N-2-0",
+   "halfFlips": 9,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 44.92,
+   "durationMs": 704,
+   "settleAngleDeg": 44.92,
+   "energy": 0,
+   "energyRaw": 0.2745
+  },
+  {
+   "id": "9N-0-0",
+   "halfFlips": 9,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 9,
+   "durationMs": 776,
+   "settleAngleDeg": 9,
+   "energy": 1,
+   "energyRaw": 0.2935
+  },
+  {
+   "id": "9E-1-0",
+   "halfFlips": 9,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 117,
+   "durationMs": 698,
+   "settleAngleDeg": 117,
+   "energy": 0,
+   "energyRaw": 0.2087
+  },
+  {
+   "id": "9E-0-0",
+   "halfFlips": 9,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 98.99,
+   "durationMs": 601,
+   "settleAngleDeg": 98.99,
+   "energy": 1,
+   "energyRaw": 0.3474
+  },
+  {
+   "id": "9S-4-0",
+   "halfFlips": 9,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 260.84,
+   "durationMs": 929,
+   "settleAngleDeg": 260.84,
+   "energy": 0,
+   "energyRaw": 0.2589
+  },
+  {
+   "id": "9S-2-0",
+   "halfFlips": 9,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 225,
+   "durationMs": 628,
+   "settleAngleDeg": 225,
+   "energy": 1,
+   "energyRaw": 0.2893
+  },
+  {
+   "id": "9W-1-0",
+   "halfFlips": 9,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 296.99,
+   "durationMs": 661,
+   "settleAngleDeg": 296.99,
+   "energy": 0,
+   "energyRaw": 0.2277
+  },
+  {
+   "id": "9W-3-0",
+   "halfFlips": 9,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 333.09,
+   "durationMs": 813,
+   "settleAngleDeg": 333.09,
+   "energy": 1,
+   "energyRaw": 0.2416
+  },
+  {
+   "id": "10N-1-0",
+   "halfFlips": 10,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 27.02,
+   "durationMs": 589,
+   "settleAngleDeg": 27.02,
+   "energy": 0,
+   "energyRaw": 0.2494
+  },
+  {
+   "id": "10N-2-0",
+   "halfFlips": 10,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 44.98,
+   "durationMs": 614,
+   "settleAngleDeg": 44.98,
+   "energy": 1,
+   "energyRaw": 0.3414
+  },
+  {
+   "id": "10E-0-0",
+   "halfFlips": 10,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 98.99,
+   "durationMs": 579,
+   "settleAngleDeg": 98.99,
+   "energy": 0,
+   "energyRaw": 0.3115
+  },
+  {
+   "id": "9N-3-0",
+   "halfFlips": 10,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 97.57,
+   "durationMs": 1003,
+   "settleAngleDeg": 97.57,
+   "energy": 1,
+   "energyRaw": 0.3621
+  },
+  {
+   "id": "10S-4-0",
+   "halfFlips": 10,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 261,
+   "durationMs": 553,
+   "settleAngleDeg": 261,
+   "energy": 0,
+   "energyRaw": 0.3282
+  },
+  {
+   "id": "10S-2-0",
+   "halfFlips": 10,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 225.72,
+   "durationMs": 848,
+   "settleAngleDeg": 225.72,
+   "energy": 1,
+   "energyRaw": 0.3382
+  },
+  {
+   "id": "10W-1-0",
+   "halfFlips": 10,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 296.77,
+   "durationMs": 723,
+   "settleAngleDeg": 296.77,
+   "energy": 0,
+   "energyRaw": 0.3427
+  },
+  {
+   "id": "10W-3-0",
+   "halfFlips": 10,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 333,
+   "durationMs": 792,
+   "settleAngleDeg": 333,
+   "energy": 1,
+   "energyRaw": 0.374
+  },
+  {
+   "id": "11N-2-0",
+   "halfFlips": 11,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 45.26,
+   "durationMs": 831,
+   "settleAngleDeg": 45.26,
+   "energy": 0,
+   "energyRaw": 0.2643
+  },
+  {
+   "id": "11N-3-0",
+   "halfFlips": 11,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 62.91,
+   "durationMs": 927,
+   "settleAngleDeg": 62.91,
+   "energy": 1,
+   "energyRaw": 0.3856
+  },
+  {
+   "id": "11E-2-0",
+   "halfFlips": 11,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 135.05,
+   "durationMs": 578,
+   "settleAngleDeg": 135.05,
+   "energy": 0,
+   "energyRaw": 0.2845
+  },
+  {
+   "id": "11E-3-0",
+   "halfFlips": 11,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 153,
+   "durationMs": 774,
+   "settleAngleDeg": 153,
+   "energy": 1,
+   "energyRaw": 0.3341
+  },
+  {
+   "id": "11S-4-0",
+   "halfFlips": 11,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 261,
+   "durationMs": 574,
+   "settleAngleDeg": 261,
+   "energy": 0,
+   "energyRaw": 0.3278
+  },
+  {
+   "id": "11S-1-0",
+   "halfFlips": 11,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 207.02,
+   "durationMs": 818,
+   "settleAngleDeg": 207.02,
+   "energy": 1,
+   "energyRaw": 0.3568
+  },
+  {
+   "id": "11W-2-0",
+   "halfFlips": 11,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 314.74,
+   "durationMs": 648,
+   "settleAngleDeg": 314.74,
+   "energy": 0,
+   "energyRaw": 0.2812
+  },
+  {
+   "id": "13E-4-0",
+   "halfFlips": 11,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 351.04,
+   "durationMs": 1021,
+   "settleAngleDeg": 351.04,
+   "energy": 1,
+   "energyRaw": 0.3496
+  },
+  {
+   "id": "12N-4-0",
+   "halfFlips": 12,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 81.03,
+   "durationMs": 607,
+   "settleAngleDeg": 81.03,
+   "energy": 0,
+   "energyRaw": 0.2774
+  },
+  {
+   "id": "12N-2-0",
+   "halfFlips": 12,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 44.93,
+   "durationMs": 718,
+   "settleAngleDeg": 44.93,
+   "energy": 1,
+   "energyRaw": 0.36
+  },
+  {
+   "id": "12E-1-0",
+   "halfFlips": 12,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 116.93,
+   "durationMs": 708,
+   "settleAngleDeg": 116.93,
+   "energy": 0,
+   "energyRaw": 0.2738
+  },
+  {
+   "id": "12E-3-0",
+   "halfFlips": 12,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 152.93,
+   "durationMs": 702,
+   "settleAngleDeg": 152.93,
+   "energy": 1,
+   "energyRaw": 0.3943
+  },
+  {
+   "id": "12S-4-0",
+   "halfFlips": 12,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 260.84,
+   "durationMs": 713,
+   "settleAngleDeg": 260.84,
+   "energy": 0,
+   "energyRaw": 0.2655
+  },
+  {
+   "id": "12S-1-0",
+   "halfFlips": 12,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 207.14,
+   "durationMs": 674,
+   "settleAngleDeg": 207.14,
+   "energy": 1,
+   "energyRaw": 0.3454
+  },
+  {
+   "id": "12W-4-0",
+   "halfFlips": 12,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 350.86,
+   "durationMs": 842,
+   "settleAngleDeg": 350.86,
+   "energy": 0,
+   "energyRaw": 0.2709
+  },
+  {
+   "id": "12W-3-0",
+   "halfFlips": 12,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 332.34,
+   "durationMs": 639,
+   "settleAngleDeg": 332.34,
+   "energy": 1,
+   "energyRaw": 0.4011
+  },
+  {
+   "id": "13N-1-1",
+   "halfFlips": 13,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 26.99,
+   "durationMs": 846,
+   "settleAngleDeg": 26.99,
+   "energy": 0,
+   "energyRaw": 0.3391
+  },
+  {
+   "id": "13N-3-2",
+   "halfFlips": 13,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 63.07,
+   "durationMs": 543,
+   "settleAngleDeg": 63.07,
+   "energy": 1,
+   "energyRaw": 0.3694
+  },
+  {
+   "id": "14S-3-0",
+   "halfFlips": 13,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 179.48,
+   "durationMs": 936,
+   "settleAngleDeg": 179.48,
+   "energy": 0,
+   "energyRaw": 0.2834
+  },
+  {
+   "id": "13E-3-0",
+   "halfFlips": 13,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 153.02,
+   "durationMs": 697,
+   "settleAngleDeg": 153.02,
+   "energy": 1,
+   "energyRaw": 0.4107
+  },
+  {
+   "id": "13S-1-0",
+   "halfFlips": 13,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 201.79,
+   "durationMs": 816,
+   "settleAngleDeg": 201.79,
+   "energy": 0,
+   "energyRaw": 0.3154
+  },
+  {
+   "id": "13S-3-0",
+   "halfFlips": 13,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 242.86,
+   "durationMs": 717,
+   "settleAngleDeg": 242.86,
+   "energy": 1,
+   "energyRaw": 0.4209
+  },
+  {
+   "id": "13W-1-0",
+   "halfFlips": 13,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 298.6,
+   "durationMs": 702,
+   "settleAngleDeg": 298.6,
+   "energy": 0,
+   "energyRaw": 0.3184
+  },
+  {
+   "id": "13W-3-0",
+   "halfFlips": 13,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 332.99,
+   "durationMs": 908,
+   "settleAngleDeg": 332.99,
+   "energy": 1,
+   "energyRaw": 0.381
+  },
+  {
+   "id": "14N-4-0",
+   "halfFlips": 14,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 80.19,
+   "durationMs": 868,
+   "settleAngleDeg": 80.19,
+   "energy": 0,
+   "energyRaw": 0.337
+  },
+  {
+   "id": "14N-2-0",
+   "halfFlips": 14,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 45.06,
+   "durationMs": 552,
+   "settleAngleDeg": 45.06,
+   "energy": 1,
+   "energyRaw": 0.3619
+  },
+  {
+   "id": "14E-2-0",
+   "halfFlips": 14,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 134.98,
+   "durationMs": 829,
+   "settleAngleDeg": 134.98,
+   "energy": 0,
+   "energyRaw": 0.3508
+  },
+  {
+   "id": "14E-0-0",
+   "halfFlips": 14,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 99.6,
+   "durationMs": 768,
+   "settleAngleDeg": 99.6,
+   "energy": 1,
+   "energyRaw": 0.3758
+  },
+  {
+   "id": "14S-1-0",
+   "halfFlips": 14,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 207.02,
+   "durationMs": 967,
+   "settleAngleDeg": 207.02,
+   "energy": 0,
+   "energyRaw": 0.3186
+  },
+  {
+   "id": "14S-2-0",
+   "halfFlips": 14,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 225.02,
+   "durationMs": 686,
+   "settleAngleDeg": 225.02,
+   "energy": 1,
+   "energyRaw": 0.3602
+  },
+  {
+   "id": "14W-1-0",
+   "halfFlips": 14,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 296.97,
+   "durationMs": 833,
+   "settleAngleDeg": 296.97,
+   "energy": 0,
+   "energyRaw": 0.3145
+  },
+  {
+   "id": "14W-4-0",
+   "halfFlips": 14,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 351.52,
+   "durationMs": 791,
+   "settleAngleDeg": 351.52,
+   "energy": 1,
+   "energyRaw": 0.413
+  },
+  {
+   "id": "15N-2-1",
+   "halfFlips": 15,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 45.03,
+   "durationMs": 789,
+   "settleAngleDeg": 45.03,
+   "energy": 0,
+   "energyRaw": 0.3426
+  },
+  {
+   "id": "15N-3-0",
+   "halfFlips": 15,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 63,
+   "durationMs": 571,
+   "settleAngleDeg": 63,
+   "energy": 1,
+   "energyRaw": 0.3583
+  },
+  {
+   "id": "15E-4-0",
+   "halfFlips": 15,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 170.99,
+   "durationMs": 867,
+   "settleAngleDeg": 170.99,
+   "energy": 0,
+   "energyRaw": 0.286
+  },
+  {
+   "id": "15E-1-0",
+   "halfFlips": 15,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 117.11,
+   "durationMs": 606,
+   "settleAngleDeg": 117.11,
+   "energy": 1,
+   "energyRaw": 0.3915
+  },
+  {
+   "id": "15S-1-0",
+   "halfFlips": 15,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 206.98,
+   "durationMs": 496,
+   "settleAngleDeg": 206.98,
+   "energy": 0,
+   "energyRaw": 0.3889
+  },
+  {
+   "id": "15S-3-0",
+   "halfFlips": 15,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 243.36,
+   "durationMs": 798,
+   "settleAngleDeg": 243.36,
+   "energy": 1,
+   "energyRaw": 0.4162
+  },
+  {
+   "id": "15W-0-0",
+   "halfFlips": 15,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 279.15,
+   "durationMs": 728,
+   "settleAngleDeg": 279.15,
+   "energy": 0,
+   "energyRaw": 0.3609
+  },
+  {
+   "id": "15W-4-0",
+   "halfFlips": 15,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 350.91,
+   "durationMs": 608,
+   "settleAngleDeg": 350.91,
+   "energy": 1,
+   "energyRaw": 0.4546
+  },
+  {
+   "id": "16N-0-0",
+   "halfFlips": 16,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 9.21,
+   "durationMs": 925,
+   "settleAngleDeg": 9.21,
+   "energy": 0,
+   "energyRaw": 0.3898
+  },
+  {
+   "id": "16N-2-0",
+   "halfFlips": 16,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 44.99,
+   "durationMs": 780,
+   "settleAngleDeg": 44.99,
+   "energy": 1,
+   "energyRaw": 0.415
+  },
+  {
+   "id": "16E-3-0",
+   "halfFlips": 16,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 153.02,
+   "durationMs": 872,
+   "settleAngleDeg": 153.02,
+   "energy": 0,
+   "energyRaw": 0.3446
+  },
+  {
+   "id": "16E-0-0",
+   "halfFlips": 16,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 98.94,
+   "durationMs": 829,
+   "settleAngleDeg": 98.94,
+   "energy": 1,
+   "energyRaw": 0.4062
+  },
+  {
+   "id": "16S-0-0",
+   "halfFlips": 16,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 189,
+   "durationMs": 631,
+   "settleAngleDeg": 189,
+   "energy": 0,
+   "energyRaw": 0.347
+  },
+  {
+   "id": "17E-0-1",
+   "halfFlips": 16,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 236.27,
+   "durationMs": 856,
+   "settleAngleDeg": 236.27,
+   "energy": 1,
+   "energyRaw": 0.4681
+  },
+  {
+   "id": "16W-4-0",
+   "halfFlips": 16,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 351.26,
+   "durationMs": 669,
+   "settleAngleDeg": 351.26,
+   "energy": 0,
+   "energyRaw": 0.4183
+  },
+  {
+   "id": "16W-2-0",
+   "halfFlips": 16,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 315.03,
+   "durationMs": 850,
+   "settleAngleDeg": 315.03,
+   "energy": 1,
+   "energyRaw": 0.4526
+  },
+  {
+   "id": "17N-1-0",
+   "halfFlips": 17,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 26.98,
+   "durationMs": 840,
+   "settleAngleDeg": 26.98,
+   "energy": 0,
+   "energyRaw": 0.3928
+  },
+  {
+   "id": "17N-4-0",
+   "halfFlips": 17,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 80.78,
+   "durationMs": 939,
+   "settleAngleDeg": 80.78,
+   "energy": 1,
+   "energyRaw": 0.4482
+  },
+  {
+   "id": "17E-1-0",
+   "halfFlips": 17,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 117.02,
+   "durationMs": 547,
+   "settleAngleDeg": 117.02,
+   "energy": 0,
+   "energyRaw": 0.3769
+  },
+  {
+   "id": "17E-2-1",
+   "halfFlips": 17,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 135,
+   "durationMs": 807,
+   "settleAngleDeg": 135,
+   "energy": 1,
+   "energyRaw": 0.3961
+  },
+  {
+   "id": "17S-4-0",
+   "halfFlips": 17,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 261.32,
+   "durationMs": 748,
+   "settleAngleDeg": 261.32,
+   "energy": 0,
+   "energyRaw": 0.3662
+  },
+  {
+   "id": "17S-0-0",
+   "halfFlips": 17,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 189,
+   "durationMs": 846,
+   "settleAngleDeg": 189,
+   "energy": 1,
+   "energyRaw": 0.4289
+  },
+  {
+   "id": "17W-0-0",
+   "halfFlips": 17,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 278.96,
+   "durationMs": 812,
+   "settleAngleDeg": 278.96,
+   "energy": 0,
+   "energyRaw": 0.3424
+  },
+  {
+   "id": "17W-2-0",
+   "halfFlips": 17,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 314.99,
+   "durationMs": 785,
+   "settleAngleDeg": 314.99,
+   "energy": 1,
+   "energyRaw": 0.4159
+  },
+  {
+   "id": "19W-0-0",
+   "halfFlips": 18,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 44.34,
+   "durationMs": 885,
+   "settleAngleDeg": 44.34,
+   "energy": 0,
+   "energyRaw": 0.4463
+  },
+  {
+   "id": "18N-4-0",
+   "halfFlips": 18,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 80.99,
+   "durationMs": 697,
+   "settleAngleDeg": 80.99,
+   "energy": 1,
+   "energyRaw": 0.4952
+  },
+  {
+   "id": "18E-3-0",
+   "halfFlips": 18,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 153.54,
+   "durationMs": 716,
+   "settleAngleDeg": 153.54,
+   "energy": 0,
+   "energyRaw": 0.3865
+  },
+  {
+   "id": "18E-1-0",
+   "halfFlips": 18,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 116.98,
+   "durationMs": 868,
+   "settleAngleDeg": 116.98,
+   "energy": 1,
+   "energyRaw": 0.4191
+  },
+  {
+   "id": "18S-0-0",
+   "halfFlips": 18,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 186.43,
+   "durationMs": 1075,
+   "settleAngleDeg": 186.43,
+   "energy": 0,
+   "energyRaw": 0.3724
+  },
+  {
+   "id": "18S-2-0",
+   "halfFlips": 18,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 224.99,
+   "durationMs": 746,
+   "settleAngleDeg": 224.99,
+   "energy": 1,
+   "energyRaw": 0.448
+  },
+  {
+   "id": "18W-3-0",
+   "halfFlips": 18,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 333,
+   "durationMs": 584,
+   "settleAngleDeg": 333,
+   "energy": 0,
+   "energyRaw": 0.452
+  },
+  {
+   "id": "18W-1-0",
+   "halfFlips": 18,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 296.95,
+   "durationMs": 932,
+   "settleAngleDeg": 296.95,
+   "energy": 1,
+   "energyRaw": 0.4767
+  },
+  {
+   "id": "18W-4-0",
+   "halfFlips": 19,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 74.59,
+   "durationMs": 904,
+   "settleAngleDeg": 74.59,
+   "energy": 0,
+   "energyRaw": 0.4074
+  },
+  {
+   "id": "19N-0-0",
+   "halfFlips": 19,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 10.02,
+   "durationMs": 803,
+   "settleAngleDeg": 10.02,
+   "energy": 1,
+   "energyRaw": 0.4129
+  },
+  {
+   "id": "19E-1-0",
+   "halfFlips": 19,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 117.16,
+   "durationMs": 908,
+   "settleAngleDeg": 117.16,
+   "energy": 0,
+   "energyRaw": 0.3787
+  },
+  {
+   "id": "19E-4-0",
+   "halfFlips": 19,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 171.01,
+   "durationMs": 692,
+   "settleAngleDeg": 171.01,
+   "energy": 1,
+   "energyRaw": 0.4246
+  },
+  {
+   "id": "19S-2-2",
+   "halfFlips": 19,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 224.95,
+   "durationMs": 669,
+   "settleAngleDeg": 224.95,
+   "energy": 0,
+   "energyRaw": 0.4559
+  },
+  {
+   "id": "19S-4-0",
+   "halfFlips": 19,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 260.98,
+   "durationMs": 667,
+   "settleAngleDeg": 260.98,
+   "energy": 1,
+   "energyRaw": 0.4982
+  },
+  {
+   "id": "19W-3-0",
+   "halfFlips": 19,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 333.02,
+   "durationMs": 550,
+   "settleAngleDeg": 333.02,
+   "energy": 0,
+   "energyRaw": 0.4536
+  },
+  {
+   "id": "19W-2-1",
+   "halfFlips": 19,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 310.58,
+   "durationMs": 768,
+   "settleAngleDeg": 310.58,
+   "energy": 1,
+   "energyRaw": 0.4954
+  },
+  {
+   "id": "20N-4-0",
+   "halfFlips": 20,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 81.57,
+   "durationMs": 791,
+   "settleAngleDeg": 81.57,
+   "energy": 0,
+   "energyRaw": 0.4533
+  },
+  {
+   "id": "20N-1-0",
+   "halfFlips": 20,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 26.77,
+   "durationMs": 797,
+   "settleAngleDeg": 26.77,
+   "energy": 1,
+   "energyRaw": 0.4634
+  },
+  {
+   "id": "19S-2-0",
+   "halfFlips": 20,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 123.9,
+   "durationMs": 833,
+   "settleAngleDeg": 123.9,
+   "energy": 0,
+   "energyRaw": 0.4415
+  },
+  {
+   "id": "20E-1-0",
+   "halfFlips": 20,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 119.84,
+   "durationMs": 567,
+   "settleAngleDeg": 119.84,
+   "energy": 1,
+   "energyRaw": 0.5747
+  },
+  {
+   "id": "20S-0-0",
+   "halfFlips": 20,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 188.29,
+   "durationMs": 851,
+   "settleAngleDeg": 188.29,
+   "energy": 0,
+   "energyRaw": 0.462
+  },
+  {
+   "id": "20S-3-0",
+   "halfFlips": 20,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 242.88,
+   "durationMs": 572,
+   "settleAngleDeg": 242.88,
+   "energy": 1,
+   "energyRaw": 0.4767
+  },
+  {
+   "id": "20W-2-0",
+   "halfFlips": 20,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 315.01,
+   "durationMs": 686,
+   "settleAngleDeg": 315.01,
+   "energy": 0,
+   "energyRaw": 0.4433
+  },
+  {
+   "id": "20W-0-0",
+   "halfFlips": 20,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 278.99,
+   "durationMs": 485,
+   "settleAngleDeg": 278.99,
+   "energy": 1,
+   "energyRaw": 0.5816
+  },
+  {
+   "id": "21N-3-0",
+   "halfFlips": 21,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 62.96,
+   "durationMs": 892,
+   "settleAngleDeg": 62.96,
+   "energy": 0,
+   "energyRaw": 0.513
+  },
+  {
+   "id": "21N-2-0",
+   "halfFlips": 21,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 45.38,
+   "durationMs": 599,
+   "settleAngleDeg": 45.38,
+   "energy": 1,
+   "energyRaw": 0.5921
+  },
+  {
+   "id": "21E-2-0",
+   "halfFlips": 21,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 134.83,
+   "durationMs": 750,
+   "settleAngleDeg": 134.83,
+   "energy": 0,
+   "energyRaw": 0.4512
+  },
+  {
+   "id": "21E-3-0",
+   "halfFlips": 21,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 152.99,
+   "durationMs": 507,
+   "settleAngleDeg": 152.99,
+   "energy": 1,
+   "energyRaw": 0.6297
+  },
+  {
+   "id": "21S-1-0",
+   "halfFlips": 21,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 205.3,
+   "durationMs": 914,
+   "settleAngleDeg": 205.3,
+   "energy": 0,
+   "energyRaw": 0.4653
+  },
+  {
+   "id": "21S-4-0",
+   "halfFlips": 21,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 261,
+   "durationMs": 603,
+   "settleAngleDeg": 261,
+   "energy": 1,
+   "energyRaw": 0.5092
+  },
+  {
+   "id": "21W-3-0",
+   "halfFlips": 21,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 333.72,
+   "durationMs": 842,
+   "settleAngleDeg": 333.72,
+   "energy": 0,
+   "energyRaw": 0.4734
+  },
+  {
+   "id": "21W-1-0",
+   "halfFlips": 21,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 297,
+   "durationMs": 562,
+   "settleAngleDeg": 297,
+   "energy": 1,
+   "energyRaw": 0.5384
+  },
+  {
+   "id": "22N-3-0",
+   "halfFlips": 22,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 62.99,
+   "durationMs": 637,
+   "settleAngleDeg": 62.99,
+   "energy": 0,
+   "energyRaw": 0.4963
+  },
+  {
+   "id": "22N-1-0",
+   "halfFlips": 22,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 27.3,
+   "durationMs": 800,
+   "settleAngleDeg": 27.3,
+   "energy": 1,
+   "energyRaw": 0.5325
+  },
+  {
+   "id": "22E-2-0",
+   "halfFlips": 22,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 134.98,
+   "durationMs": 912,
+   "settleAngleDeg": 134.98,
+   "energy": 0,
+   "energyRaw": 0.5093
+  },
+  {
+   "id": "22E-3-0",
+   "halfFlips": 22,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 153.03,
+   "durationMs": 713,
+   "settleAngleDeg": 153.03,
+   "energy": 1,
+   "energyRaw": 0.5482
+  },
+  {
+   "id": "22S-2-0",
+   "halfFlips": 22,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 225.01,
+   "durationMs": 859,
+   "settleAngleDeg": 225.01,
+   "energy": 0,
+   "energyRaw": 0.5308
+  },
+  {
+   "id": "22S-1-0",
+   "halfFlips": 22,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 209.23,
+   "durationMs": 597,
+   "settleAngleDeg": 209.23,
+   "energy": 1,
+   "energyRaw": 0.586
+  },
+  {
+   "id": "22W-0-0",
+   "halfFlips": 22,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 278.86,
+   "durationMs": 841,
+   "settleAngleDeg": 278.86,
+   "energy": 0,
+   "energyRaw": 0.5305
+  },
+  {
+   "id": "22W-2-0",
+   "halfFlips": 22,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 315.25,
+   "durationMs": 714,
+   "settleAngleDeg": 315.25,
+   "energy": 1,
+   "energyRaw": 0.5553
+  },
+  {
+   "id": "23N-1-0",
+   "halfFlips": 23,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 27.12,
+   "durationMs": 755,
+   "settleAngleDeg": 27.12,
+   "energy": 0,
+   "energyRaw": 0.4819
+  },
+  {
+   "id": "23N-3-0",
+   "halfFlips": 23,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 63,
+   "durationMs": 508,
+   "settleAngleDeg": 63,
+   "energy": 1,
+   "energyRaw": 0.6557
+  },
+  {
+   "id": "23E-2-0",
+   "halfFlips": 23,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 136,
+   "durationMs": 797,
+   "settleAngleDeg": 136,
+   "energy": 0,
+   "energyRaw": 0.4968
+  },
+  {
+   "id": "23E-0-0",
+   "halfFlips": 23,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 102.3,
+   "durationMs": 631,
+   "settleAngleDeg": 102.3,
+   "energy": 1,
+   "energyRaw": 0.5019
+  },
+  {
+   "id": "23S-2-0",
+   "halfFlips": 23,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 224.98,
+   "durationMs": 744,
+   "settleAngleDeg": 224.98,
+   "energy": 0,
+   "energyRaw": 0.5136
+  },
+  {
+   "id": "23S-3-0",
+   "halfFlips": 23,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 238,
+   "durationMs": 887,
+   "settleAngleDeg": 238,
+   "energy": 1,
+   "energyRaw": 0.5256
+  },
+  {
+   "id": "23W-1-2",
+   "halfFlips": 23,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 296.69,
+   "durationMs": 852,
+   "settleAngleDeg": 296.69,
+   "energy": 0,
+   "energyRaw": 0.4994
+  },
+  {
+   "id": "23W-4-0",
+   "halfFlips": 23,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 351.28,
+   "durationMs": 1054,
+   "settleAngleDeg": 351.28,
+   "energy": 1,
+   "energyRaw": 0.5073
+  },
+  {
+   "id": "25N-1-1",
+   "halfFlips": 25,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 26.89,
+   "durationMs": 801,
+   "settleAngleDeg": 26.89,
+   "energy": 0,
+   "energyRaw": 0.5933
+  },
+  {
+   "id": "25N-4-0",
+   "halfFlips": 25,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 81.08,
+   "durationMs": 654,
+   "settleAngleDeg": 81.08,
+   "energy": 1,
+   "energyRaw": 0.7277
+  },
+  {
+   "id": "25E-1-0",
+   "halfFlips": 25,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 116.96,
+   "durationMs": 772,
+   "settleAngleDeg": 116.96,
+   "energy": 0,
+   "energyRaw": 0.5079
+  },
+  {
+   "id": "25E-4-3",
+   "halfFlips": 25,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 170.99,
+   "durationMs": 658,
+   "settleAngleDeg": 170.99,
+   "energy": 1,
+   "energyRaw": 0.6318
+  },
+  {
+   "id": "25S-3-0",
+   "halfFlips": 25,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 241.9,
+   "durationMs": 826,
+   "settleAngleDeg": 241.9,
+   "energy": 0,
+   "energyRaw": 0.5437
+  },
+  {
+   "id": "25S-1-0",
+   "halfFlips": 25,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 206.51,
+   "durationMs": 731,
+   "settleAngleDeg": 206.51,
+   "energy": 1,
+   "energyRaw": 0.5851
+  },
+  {
+   "id": "25W-0-0",
+   "halfFlips": 25,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 279.25,
+   "durationMs": 909,
+   "settleAngleDeg": 279.25,
+   "energy": 0,
+   "energyRaw": 0.4949
+  },
+  {
+   "id": "25W-3-0",
+   "halfFlips": 25,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 331.03,
+   "durationMs": 762,
+   "settleAngleDeg": 331.03,
+   "energy": 1,
+   "energyRaw": 0.5679
+  },
+  {
+   "id": "25N-1-0",
+   "halfFlips": 26,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 28.39,
+   "durationMs": 931,
+   "settleAngleDeg": 28.39,
+   "energy": 0,
+   "energyRaw": 0.5779
+  },
+  {
+   "id": "26N-2-0",
+   "halfFlips": 26,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 44.95,
+   "durationMs": 678,
+   "settleAngleDeg": 44.95,
+   "energy": 1,
+   "energyRaw": 0.6907
+  },
+  {
+   "id": "26E-2-0",
+   "halfFlips": 26,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 134.5,
+   "durationMs": 922,
+   "settleAngleDeg": 134.5,
+   "energy": 0,
+   "energyRaw": 0.4407
+  },
+  {
+   "id": "26E-0-0",
+   "halfFlips": 26,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 96.15,
+   "durationMs": 770,
+   "settleAngleDeg": 96.15,
+   "energy": 1,
+   "energyRaw": 0.6195
+  },
+  {
+   "id": "26S-4-0",
+   "halfFlips": 26,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 261,
+   "durationMs": 620,
+   "settleAngleDeg": 261,
+   "energy": 0,
+   "energyRaw": 0.5138
+  },
+  {
+   "id": "26S-2-0",
+   "halfFlips": 26,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 225.01,
+   "durationMs": 697,
+   "settleAngleDeg": 225.01,
+   "energy": 1,
+   "energyRaw": 0.5717
+  },
+  {
+   "id": "26W-1-0",
+   "halfFlips": 26,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 297.01,
+   "durationMs": 979,
+   "settleAngleDeg": 297.01,
+   "energy": 0,
+   "energyRaw": 0.4643
+  },
+  {
+   "id": "26W-4-0",
+   "halfFlips": 26,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 351.69,
+   "durationMs": 831,
+   "settleAngleDeg": 351.69,
+   "energy": 1,
+   "energyRaw": 0.5757
+  },
+  {
+   "id": "27N-1-0",
+   "halfFlips": 27,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 27.01,
+   "durationMs": 672,
+   "settleAngleDeg": 27.01,
+   "energy": 0,
+   "energyRaw": 0.6414
+  },
+  {
+   "id": "27N-3-1",
+   "halfFlips": 27,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 63.01,
+   "durationMs": 584,
+   "settleAngleDeg": 63.01,
+   "energy": 1,
+   "energyRaw": 0.6785
+  },
+  {
+   "id": "27E-1-0",
+   "halfFlips": 27,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 113.13,
+   "durationMs": 907,
+   "settleAngleDeg": 113.13,
+   "energy": 0,
+   "energyRaw": 0.572
+  },
+  {
+   "id": "27E-2-0",
+   "halfFlips": 27,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 134.95,
+   "durationMs": 625,
+   "settleAngleDeg": 134.95,
+   "energy": 1,
+   "energyRaw": 0.6443
+  },
+  {
+   "id": "27S-3-0",
+   "halfFlips": 27,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 241.55,
+   "durationMs": 813,
+   "settleAngleDeg": 241.55,
+   "energy": 0,
+   "energyRaw": 0.5777
+  },
+  {
+   "id": "27S-0-0",
+   "halfFlips": 27,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 189.23,
+   "durationMs": 635,
+   "settleAngleDeg": 189.23,
+   "energy": 1,
+   "energyRaw": 0.6511
+  },
+  {
+   "id": "27W-1-0",
+   "halfFlips": 27,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 296.99,
+   "durationMs": 840,
+   "settleAngleDeg": 296.99,
+   "energy": 0,
+   "energyRaw": 0.5346
+  },
+  {
+   "id": "27W-4-0",
+   "halfFlips": 27,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 351.2,
+   "durationMs": 785,
+   "settleAngleDeg": 351.2,
+   "energy": 1,
+   "energyRaw": 0.5759
+  },
+  {
+   "id": "28N-3-0",
+   "halfFlips": 28,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 62.99,
+   "durationMs": 683,
+   "settleAngleDeg": 62.99,
+   "energy": 0,
+   "energyRaw": 0.6381
+  },
+  {
+   "id": "28N-0-0",
+   "halfFlips": 28,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 8.98,
+   "durationMs": 556,
+   "settleAngleDeg": 8.98,
+   "energy": 1,
+   "energyRaw": 0.673
+  },
+  {
+   "id": "28E-3-0",
+   "halfFlips": 28,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 152.98,
+   "durationMs": 902,
+   "settleAngleDeg": 152.98,
+   "energy": 0,
+   "energyRaw": 0.5971
+  },
+  {
+   "id": "28E-1-0",
+   "halfFlips": 28,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 117,
+   "durationMs": 612,
+   "settleAngleDeg": 117,
+   "energy": 1,
+   "energyRaw": 0.7103
+  },
+  {
+   "id": "28S-2-0",
+   "halfFlips": 28,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 224.99,
+   "durationMs": 906,
+   "settleAngleDeg": 224.99,
+   "energy": 0,
+   "energyRaw": 0.552
+  },
+  {
+   "id": "28S-1-0",
+   "halfFlips": 28,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 209.73,
+   "durationMs": 600,
+   "settleAngleDeg": 209.73,
+   "energy": 1,
+   "energyRaw": 0.6526
+  },
+  {
+   "id": "28W-1-0",
+   "halfFlips": 28,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 296.86,
+   "durationMs": 942,
+   "settleAngleDeg": 296.86,
+   "energy": 0,
+   "energyRaw": 0.5039
+  },
+  {
+   "id": "28W-3-0",
+   "halfFlips": 28,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 333.01,
+   "durationMs": 677,
+   "settleAngleDeg": 333.01,
+   "energy": 1,
+   "energyRaw": 0.6809
+  },
+  {
+   "id": "29N-1-0",
+   "halfFlips": 29,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 26.98,
+   "durationMs": 898,
+   "settleAngleDeg": 26.98,
+   "energy": 0,
+   "energyRaw": 0.6124
+  },
+  {
+   "id": "29N-3-0",
+   "halfFlips": 29,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 63,
+   "durationMs": 622,
+   "settleAngleDeg": 63,
+   "energy": 1,
+   "energyRaw": 0.7247
+  },
+  {
+   "id": "29E-3-0",
+   "halfFlips": 29,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 153.01,
+   "durationMs": 782,
+   "settleAngleDeg": 153.01,
+   "energy": 0,
+   "energyRaw": 0.5806
+  },
+  {
+   "id": "29E-2-0",
+   "halfFlips": 29,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 135,
+   "durationMs": 673,
+   "settleAngleDeg": 135,
+   "energy": 1,
+   "energyRaw": 0.5997
+  },
+  {
+   "id": "29S-3-0",
+   "halfFlips": 29,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 243.02,
+   "durationMs": 732,
+   "settleAngleDeg": 243.02,
+   "energy": 0,
+   "energyRaw": 0.6151
+  },
+  {
+   "id": "29S-1-0",
+   "halfFlips": 29,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 206.99,
+   "durationMs": 576,
+   "settleAngleDeg": 206.99,
+   "energy": 1,
+   "energyRaw": 0.7338
+  },
+  {
+   "id": "29W-1-1",
+   "halfFlips": 29,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 296.98,
+   "durationMs": 765,
+   "settleAngleDeg": 296.98,
+   "energy": 0,
+   "energyRaw": 0.5899
+  },
+  {
+   "id": "29W-4-0",
+   "halfFlips": 29,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 350.99,
+   "durationMs": 817,
+   "settleAngleDeg": 350.99,
+   "energy": 1,
+   "energyRaw": 0.6254
+  },
+  {
+   "id": "30N-0-1",
+   "halfFlips": 30,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 9.02,
+   "durationMs": 861,
+   "settleAngleDeg": 9.02,
+   "energy": 0,
+   "energyRaw": 0.5521
+  },
+  {
+   "id": "30N-3-1",
+   "halfFlips": 30,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 62.91,
+   "durationMs": 623,
+   "settleAngleDeg": 62.91,
+   "energy": 1,
+   "energyRaw": 0.6787
+  },
+  {
+   "id": "30E-1-0",
+   "halfFlips": 30,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 116.94,
+   "durationMs": 726,
+   "settleAngleDeg": 116.94,
+   "energy": 0,
+   "energyRaw": 0.5603
+  },
+  {
+   "id": "30E-3-0",
+   "halfFlips": 30,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 153.01,
+   "durationMs": 720,
+   "settleAngleDeg": 153.01,
+   "energy": 1,
+   "energyRaw": 0.5945
+  },
+  {
+   "id": "30S-2-0",
+   "halfFlips": 30,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 224.76,
+   "durationMs": 617,
+   "settleAngleDeg": 224.76,
+   "energy": 0,
+   "energyRaw": 0.6413
+  },
+  {
+   "id": "30S-0-0",
+   "halfFlips": 30,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 188.8,
+   "durationMs": 725,
+   "settleAngleDeg": 188.8,
+   "energy": 1,
+   "energyRaw": 0.7829
+  },
+  {
+   "id": "30W-0-0",
+   "halfFlips": 30,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 279,
+   "durationMs": 894,
+   "settleAngleDeg": 279,
+   "energy": 0,
+   "energyRaw": 0.59
+  },
+  {
+   "id": "30W-4-2",
+   "halfFlips": 30,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 351.03,
+   "durationMs": 741,
+   "settleAngleDeg": 351.03,
+   "energy": 1,
+   "energyRaw": 0.6497
+  },
+  {
+   "id": "31N-3-0",
+   "halfFlips": 31,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 63.77,
+   "durationMs": 696,
+   "settleAngleDeg": 63.77,
+   "energy": 0,
+   "energyRaw": 0.6516
+  },
+  {
+   "id": "31N-1-0",
+   "halfFlips": 31,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 27.14,
+   "durationMs": 618,
+   "settleAngleDeg": 27.14,
+   "energy": 1,
+   "energyRaw": 0.7481
+  },
+  {
+   "id": "35E-1-0",
+   "halfFlips": 31,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 117.02,
+   "durationMs": 1007,
+   "settleAngleDeg": 117.02,
+   "energy": 0,
+   "energyRaw": 0.6219
+  },
+  {
+   "id": "31E-1-0",
+   "halfFlips": 31,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 116.96,
+   "durationMs": 608,
+   "settleAngleDeg": 116.96,
+   "energy": 1,
+   "energyRaw": 0.6832
+  },
+  {
+   "id": "31S-3-0",
+   "halfFlips": 31,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 243.08,
+   "durationMs": 787,
+   "settleAngleDeg": 243.08,
+   "energy": 0,
+   "energyRaw": 0.6694
+  },
+  {
+   "id": "30N-0-0",
+   "halfFlips": 31,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 186.55,
+   "durationMs": 700,
+   "settleAngleDeg": 186.55,
+   "energy": 1,
+   "energyRaw": 0.7428
+  },
+  {
+   "id": "30N-3-0",
+   "halfFlips": 31,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 296.07,
+   "durationMs": 824,
+   "settleAngleDeg": 296.07,
+   "energy": 0,
+   "energyRaw": 0.5933
+  },
+  {
+   "id": "31W-3-0",
+   "halfFlips": 31,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 328.8,
+   "durationMs": 739,
+   "settleAngleDeg": 328.8,
+   "energy": 1,
+   "energyRaw": 0.6726
+  },
+  {
+   "id": "31S-0-0",
+   "halfFlips": 32,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 83.05,
+   "durationMs": 1051,
+   "settleAngleDeg": 83.05,
+   "energy": 0,
+   "energyRaw": 0.5979
+  },
+  {
+   "id": "32N-1-2",
+   "halfFlips": 32,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 27.01,
+   "durationMs": 670,
+   "settleAngleDeg": 27.01,
+   "energy": 1,
+   "energyRaw": 0.7275
+  },
+  {
+   "id": "32E-1-0",
+   "halfFlips": 32,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 116.96,
+   "durationMs": 943,
+   "settleAngleDeg": 116.96,
+   "energy": 0,
+   "energyRaw": 0.563
+  },
+  {
+   "id": "33N-2-0",
+   "halfFlips": 32,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 108.96,
+   "durationMs": 719,
+   "settleAngleDeg": 108.96,
+   "energy": 1,
+   "energyRaw": 0.7609
+  },
+  {
+   "id": "32S-2-1",
+   "halfFlips": 32,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 225.26,
+   "durationMs": 893,
+   "settleAngleDeg": 225.26,
+   "energy": 0,
+   "energyRaw": 0.596
+  },
+  {
+   "id": "30W-4-0",
+   "halfFlips": 32,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 220.72,
+   "durationMs": 738,
+   "settleAngleDeg": 220.72,
+   "energy": 1,
+   "energyRaw": 0.8016
+  },
+  {
+   "id": "32W-2-1",
+   "halfFlips": 32,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 314.98,
+   "durationMs": 750,
+   "settleAngleDeg": 314.98,
+   "energy": 0,
+   "energyRaw": 0.6388
+  },
+  {
+   "id": "33E-0-0",
+   "halfFlips": 32,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 337.76,
+   "durationMs": 610,
+   "settleAngleDeg": 337.76,
+   "energy": 1,
+   "energyRaw": 0.6404
+  },
+  {
+   "id": "33N-2-1",
+   "halfFlips": 33,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 48.16,
+   "durationMs": 871,
+   "settleAngleDeg": 48.16,
+   "energy": 0,
+   "energyRaw": 0.6902
+  },
+  {
+   "id": "33N-0-0",
+   "halfFlips": 33,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 8.96,
+   "durationMs": 644,
+   "settleAngleDeg": 8.96,
+   "energy": 1,
+   "energyRaw": 0.7035
+  },
+  {
+   "id": "33E-0-1",
+   "halfFlips": 33,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 98.93,
+   "durationMs": 896,
+   "settleAngleDeg": 98.93,
+   "energy": 0,
+   "energyRaw": 0.6392
+  },
+  {
+   "id": "33E-2-0",
+   "halfFlips": 33,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 134.95,
+   "durationMs": 654,
+   "settleAngleDeg": 134.95,
+   "energy": 1,
+   "energyRaw": 0.7688
+  },
+  {
+   "id": "33S-2-0",
+   "halfFlips": 33,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 225,
+   "durationMs": 750,
+   "settleAngleDeg": 225,
+   "energy": 0,
+   "energyRaw": 0.6185
+  },
+  {
+   "id": "37S-1-0",
+   "halfFlips": 33,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 250.49,
+   "durationMs": 574,
+   "settleAngleDeg": 250.49,
+   "energy": 1,
+   "energyRaw": 0.6897
+  },
+  {
+   "id": "33W-1-0",
+   "halfFlips": 33,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 296.61,
+   "durationMs": 746,
+   "settleAngleDeg": 296.61,
+   "energy": 0,
+   "energyRaw": 0.5926
+  },
+  {
+   "id": "33W-4-0",
+   "halfFlips": 33,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 351.35,
+   "durationMs": 658,
+   "settleAngleDeg": 351.35,
+   "energy": 1,
+   "energyRaw": 0.7314
+  },
+  {
+   "id": "34N-2-0",
+   "halfFlips": 34,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 45,
+   "durationMs": 939,
+   "settleAngleDeg": 45,
+   "energy": 0,
+   "energyRaw": 0.5798
+  },
+  {
+   "id": "34N-1-0",
+   "halfFlips": 34,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 27.03,
+   "durationMs": 769,
+   "settleAngleDeg": 27.03,
+   "energy": 1,
+   "energyRaw": 0.6874
+  },
+  {
+   "id": "34E-2-0",
+   "halfFlips": 34,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 135.02,
+   "durationMs": 657,
+   "settleAngleDeg": 135.02,
+   "energy": 0,
+   "energyRaw": 0.6789
+  },
+  {
+   "id": "34E-4-0",
+   "halfFlips": 34,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 170.99,
+   "durationMs": 812,
+   "settleAngleDeg": 170.99,
+   "energy": 1,
+   "energyRaw": 0.7165
+  },
+  {
+   "id": "34S-0-0",
+   "halfFlips": 34,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 189.01,
+   "durationMs": 984,
+   "settleAngleDeg": 189.01,
+   "energy": 0,
+   "energyRaw": 0.5543
+  },
+  {
+   "id": "34S-2-0",
+   "halfFlips": 34,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 225.04,
+   "durationMs": 853,
+   "settleAngleDeg": 225.04,
+   "energy": 1,
+   "energyRaw": 0.725
+  },
+  {
+   "id": "34W-0-0",
+   "halfFlips": 34,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 278.99,
+   "durationMs": 823,
+   "settleAngleDeg": 278.99,
+   "energy": 0,
+   "energyRaw": 0.6682
+  },
+  {
+   "id": "34W-2-0",
+   "halfFlips": 34,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 315.02,
+   "durationMs": 657,
+   "settleAngleDeg": 315.02,
+   "energy": 1,
+   "energyRaw": 0.7372
+  },
+  {
+   "id": "35N-0-0",
+   "halfFlips": 35,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 10.84,
+   "durationMs": 593,
+   "settleAngleDeg": 10.84,
+   "energy": 0,
+   "energyRaw": 0.6027
+  },
+  {
+   "id": "35N-3-0",
+   "halfFlips": 35,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 65.24,
+   "durationMs": 737,
+   "settleAngleDeg": 65.24,
+   "energy": 1,
+   "energyRaw": 0.7717
+  },
+  {
+   "id": "35E-0-0",
+   "halfFlips": 35,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 100.99,
+   "durationMs": 774,
+   "settleAngleDeg": 100.99,
+   "energy": 0,
+   "energyRaw": 0.6709
+  },
+  {
+   "id": "37N-1-0",
+   "halfFlips": 35,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 142.41,
+   "durationMs": 759,
+   "settleAngleDeg": 142.41,
+   "energy": 1,
+   "energyRaw": 0.6934
+  },
+  {
+   "id": "35S-3-0",
+   "halfFlips": 35,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 242.99,
+   "durationMs": 821,
+   "settleAngleDeg": 242.99,
+   "energy": 0,
+   "energyRaw": 0.6377
+  },
+  {
+   "id": "35S-1-0",
+   "halfFlips": 35,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 206.85,
+   "durationMs": 921,
+   "settleAngleDeg": 206.85,
+   "energy": 1,
+   "energyRaw": 0.7055
+  },
+  {
+   "id": "35W-1-0",
+   "halfFlips": 35,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 297.01,
+   "durationMs": 857,
+   "settleAngleDeg": 297.01,
+   "energy": 0,
+   "energyRaw": 0.6346
+  },
+  {
+   "id": "35W-4-0",
+   "halfFlips": 35,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 351,
+   "durationMs": 612,
+   "settleAngleDeg": 351,
+   "energy": 1,
+   "energyRaw": 0.6477
+  },
+  {
+   "id": "36N-2-0",
+   "halfFlips": 36,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 44.98,
+   "durationMs": 598,
+   "settleAngleDeg": 44.98,
+   "energy": 0,
+   "energyRaw": 0.6591
+  },
+  {
+   "id": "36N-3-0",
+   "halfFlips": 36,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 63.03,
+   "durationMs": 777,
+   "settleAngleDeg": 63.03,
+   "energy": 1,
+   "energyRaw": 0.7184
+  },
+  {
+   "id": "36E-0-1",
+   "halfFlips": 36,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 99,
+   "durationMs": 898,
+   "settleAngleDeg": 99,
+   "energy": 0,
+   "energyRaw": 0.5683
+  },
+  {
+   "id": "36E-4-0",
+   "halfFlips": 36,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 171.21,
+   "durationMs": 778,
+   "settleAngleDeg": 171.21,
+   "energy": 1,
+   "energyRaw": 0.7471
+  },
+  {
+   "id": "36S-4-0",
+   "halfFlips": 36,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 261,
+   "durationMs": 675,
+   "settleAngleDeg": 261,
+   "energy": 0,
+   "energyRaw": 0.6889
+  },
+  {
+   "id": "36S-1-1",
+   "halfFlips": 36,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 207.02,
+   "durationMs": 675,
+   "settleAngleDeg": 207.02,
+   "energy": 1,
+   "energyRaw": 0.7313
+  },
+  {
+   "id": "36W-1-0",
+   "halfFlips": 36,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 296.99,
+   "durationMs": 865,
+   "settleAngleDeg": 296.99,
+   "energy": 0,
+   "energyRaw": 0.6136
+  },
+  {
+   "id": "36W-4-0",
+   "halfFlips": 36,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 351.21,
+   "durationMs": 596,
+   "settleAngleDeg": 351.21,
+   "energy": 1,
+   "energyRaw": 0.6143
+  },
+  {
+   "id": "37N-1-1",
+   "halfFlips": 37,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 27.01,
+   "durationMs": 766,
+   "settleAngleDeg": 27.01,
+   "energy": 0,
+   "energyRaw": 0.6381
+  },
+  {
+   "id": "36E-0-0",
+   "halfFlips": 37,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 66.15,
+   "durationMs": 806,
+   "settleAngleDeg": 66.15,
+   "energy": 1,
+   "energyRaw": 0.7195
+  },
+  {
+   "id": "37E-0-0",
+   "halfFlips": 37,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 99.07,
+   "durationMs": 674,
+   "settleAngleDeg": 99.07,
+   "energy": 0,
+   "energyRaw": 0.6253
+  },
+  {
+   "id": "37E-3-0",
+   "halfFlips": 37,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 152.01,
+   "durationMs": 804,
+   "settleAngleDeg": 152.01,
+   "energy": 1,
+   "energyRaw": 0.6686
+  },
+  {
+   "id": "37S-4-0",
+   "halfFlips": 37,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 260.85,
+   "durationMs": 991,
+   "settleAngleDeg": 260.85,
+   "energy": 0,
+   "energyRaw": 0.6391
+  },
+  {
+   "id": "37S-3-0",
+   "halfFlips": 37,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 243.7,
+   "durationMs": 768,
+   "settleAngleDeg": 243.7,
+   "energy": 1,
+   "energyRaw": 0.6583
+  },
+  {
+   "id": "37W-4-0",
+   "halfFlips": 37,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 351,
+   "durationMs": 883,
+   "settleAngleDeg": 351,
+   "energy": 0,
+   "energyRaw": 0.6195
+  },
+  {
+   "id": "37W-1-0",
+   "halfFlips": 37,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 295.86,
+   "durationMs": 759,
+   "settleAngleDeg": 295.86,
+   "energy": 1,
+   "energyRaw": 0.766
+  },
+  {
+   "id": "37S-1-1",
+   "halfFlips": 38,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 73.87,
+   "durationMs": 918,
+   "settleAngleDeg": 73.87,
+   "energy": 0,
+   "energyRaw": 0.6856
+  },
+  {
+   "id": "38N-2-0",
+   "halfFlips": 38,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 45,
+   "durationMs": 533,
+   "settleAngleDeg": 45,
+   "energy": 1,
+   "energyRaw": 0.6994
+  },
+  {
+   "id": "38E-3-0",
+   "halfFlips": 38,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 153,
+   "durationMs": 683,
+   "settleAngleDeg": 153,
+   "energy": 0,
+   "energyRaw": 0.6928
+  },
+  {
+   "id": "38E-2-0",
+   "halfFlips": 38,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 135.01,
+   "durationMs": 769,
+   "settleAngleDeg": 135.01,
+   "energy": 1,
+   "energyRaw": 0.7102
+  },
+  {
+   "id": "38S-2-0",
+   "halfFlips": 38,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 225,
+   "durationMs": 562,
+   "settleAngleDeg": 225,
+   "energy": 0,
+   "energyRaw": 0.6621
+  },
+  {
+   "id": "38S-4-0",
+   "halfFlips": 38,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 260.98,
+   "durationMs": 859,
+   "settleAngleDeg": 260.98,
+   "energy": 1,
+   "energyRaw": 0.686
+  },
+  {
+   "id": "38W-4-0",
+   "halfFlips": 38,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 351,
+   "durationMs": 611,
+   "settleAngleDeg": 351,
+   "energy": 0,
+   "energyRaw": 0.6381
+  },
+  {
+   "id": "38W-2-0",
+   "halfFlips": 38,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 314.76,
+   "durationMs": 710,
+   "settleAngleDeg": 314.76,
+   "energy": 1,
+   "energyRaw": 0.7166
+  },
+  {
+   "id": "39N-3-1",
+   "halfFlips": 39,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 63,
+   "durationMs": 600,
+   "settleAngleDeg": 63,
+   "energy": 0,
+   "energyRaw": 0.6563
+  },
+  {
+   "id": "39N-0-0",
+   "halfFlips": 39,
+   "side": "Tails",
+   "quadrant": "N",
+   "orientationDeg": 8.35,
+   "durationMs": 598,
+   "settleAngleDeg": 8.35,
+   "energy": 1,
+   "energyRaw": 0.6853
+  },
+  {
+   "id": "39E-2-0",
+   "halfFlips": 39,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 129.86,
+   "durationMs": 669,
+   "settleAngleDeg": 129.86,
+   "energy": 0,
+   "energyRaw": 0.6893
+  },
+  {
+   "id": "39E-4-0",
+   "halfFlips": 39,
+   "side": "Tails",
+   "quadrant": "E",
+   "orientationDeg": 171,
+   "durationMs": 565,
+   "settleAngleDeg": 171,
+   "energy": 1,
+   "energyRaw": 0.7004
+  },
+  {
+   "id": "39S-4-0",
+   "halfFlips": 39,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 260.16,
+   "durationMs": 678,
+   "settleAngleDeg": 260.16,
+   "energy": 0,
+   "energyRaw": 0.7218
+  },
+  {
+   "id": "39S-1-0",
+   "halfFlips": 39,
+   "side": "Tails",
+   "quadrant": "S",
+   "orientationDeg": 208.96,
+   "durationMs": 832,
+   "settleAngleDeg": 208.96,
+   "energy": 1,
+   "energyRaw": 0.7401
+  },
+  {
+   "id": "39W-3-1",
+   "halfFlips": 39,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 332.9,
+   "durationMs": 650,
+   "settleAngleDeg": 332.9,
+   "energy": 0,
+   "energyRaw": 0.6451
+  },
+  {
+   "id": "39W-2-0",
+   "halfFlips": 39,
+   "side": "Tails",
+   "quadrant": "W",
+   "orientationDeg": 315.06,
+   "durationMs": 920,
+   "settleAngleDeg": 315.06,
+   "energy": 1,
+   "energyRaw": 0.6597
+  },
+  {
+   "id": "40N-0-0",
+   "halfFlips": 40,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 9.03,
+   "durationMs": 938,
+   "settleAngleDeg": 9.03,
+   "energy": 0,
+   "energyRaw": 0.6615
+  },
+  {
+   "id": "40N-1-0",
+   "halfFlips": 40,
+   "side": "Heads",
+   "quadrant": "N",
+   "orientationDeg": 27.01,
+   "durationMs": 694,
+   "settleAngleDeg": 27.01,
+   "energy": 1,
+   "energyRaw": 0.7725
+  },
+  {
+   "id": "40E-1-0",
+   "halfFlips": 40,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 116.84,
+   "durationMs": 839,
+   "settleAngleDeg": 116.84,
+   "energy": 0,
+   "energyRaw": 0.6956
+  },
+  {
+   "id": "40E-4-0",
+   "halfFlips": 40,
+   "side": "Heads",
+   "quadrant": "E",
+   "orientationDeg": 171.01,
+   "durationMs": 695,
+   "settleAngleDeg": 171.01,
+   "energy": 1,
+   "energyRaw": 0.768
+  },
+  {
+   "id": "40S-0-0",
+   "halfFlips": 40,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 189.17,
+   "durationMs": 792,
+   "settleAngleDeg": 189.17,
+   "energy": 0,
+   "energyRaw": 0.724
+  },
+  {
+   "id": "40S-3-0",
+   "halfFlips": 40,
+   "side": "Heads",
+   "quadrant": "S",
+   "orientationDeg": 243,
+   "durationMs": 614,
+   "settleAngleDeg": 243,
+   "energy": 1,
+   "energyRaw": 0.7328
+  },
+  {
+   "id": "40W-2-0",
+   "halfFlips": 40,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 314.9,
+   "durationMs": 646,
+   "settleAngleDeg": 314.9,
+   "energy": 0,
+   "energyRaw": 0.6506
+  },
+  {
+   "id": "39E-3-0",
+   "halfFlips": 40,
+   "side": "Heads",
+   "quadrant": "W",
+   "orientationDeg": 343.19,
+   "durationMs": 783,
+   "settleAngleDeg": 343.19,
+   "energy": 1,
+   "energyRaw": 0.7985
+  }
+ ]
+}

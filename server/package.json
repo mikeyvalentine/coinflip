@@ -1,0 +1,21 @@
+{
+  "name": "coinflip-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "COINFLIP server-authoritative backend (Cloudflare Worker + D1)",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "db:migrate:local": "wrangler d1 migrations apply coinflip --local",
+    "db:migrate:remote": "wrangler d1 migrations apply coinflip --remote",
+    "db:seed:local": "node scripts/seed.mjs --local",
+    "db:reset:local": "node scripts/reset-local.mjs",
+    "test": "node --test test/",
+    "test:unit": "node --test test/unit/",
+    "test:api": "node --test test/api/",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.115.0"
+  }
+}
