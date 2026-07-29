@@ -84,9 +84,11 @@ for (const s of seeds) {
   if (a.startFace !== b.startFace) diff.startFace++;
   if (a.spins !== b.spins) diff.spins++;
   if (a.side !== b.side) diff.side++;
-  // NE/SE/SW/NW vs N/E/S/W — same buckets, different labels
-  const norm = (q) => ({ NE: 'N', SE: 'E', SW: 'S', NW: 'W' }[q] ?? q);
-  if (norm(a.quadrant) !== norm(b.quadrant)) diff.quadrant++;
+  // Compared RAW. There used to be a lookup translating NE/SE/SW/NW to
+  // N/E/S/W here, because the two builds named the same buckets differently.
+  // They no longer do, and leaving the map in would hide the next divergence
+  // behind a translation that silently made it pass.
+  if (a.quadrant !== b.quadrant) diff.quadrant++;
   if (Math.abs(a.orientationDeg - b.orientationDeg) > 1e-9) diff.orientationDeg++;
   if (!!a.edge !== !!b.edge) diff.edge++;
   if (a.edge) edgesPreview++;

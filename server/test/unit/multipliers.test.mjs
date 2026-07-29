@@ -80,9 +80,9 @@ test('a line on the median-adjacent steps splits 16/16 -> exactly 2x each way', 
 });
 
 test('orientation is 4 / quadrants selected', () => {
-  assert.equal(orientationMultiplier(['N']), 4);
-  assert.equal(orientationMultiplier(['N', 'E']), 2);
-  assert.equal(orientationMultiplier(['N', 'E', 'S']), 4 / 3);
+  assert.equal(orientationMultiplier(['NE']), 4);
+  assert.equal(orientationMultiplier(['NE', 'SE']), 2);
+  assert.equal(orientationMultiplier(['NE', 'SE', 'SW']), 4 / 3);
   assert.equal(orientationMultiplier(QUADRANTS), 1);
 });
 
@@ -95,7 +95,7 @@ test('side is 2x and the Edge is 499x', () => {
 });
 
 test('selecting all four quadrants is a refund and is NOT treated as a bet', () => {
-  const slip = normalizeSlip({ side: 'Heads', orientation: ['N', 'E', 'S', 'W'] });
+  const slip = normalizeSlip({ side: 'Heads', orientation: ['NE', 'SE', 'SW', 'NW'] });
   const { portions, ignored } = buildPortions(slip);
   assert.deepEqual(portions.map((p) => p.key), ['side']);
   assert.deepEqual(ignored, [{ key: 'orientation', reason: 'refund_not_a_bet' }]);
@@ -110,7 +110,7 @@ test('calling the Edge stakes the whole wallet on the rim, alone', () => {
   assert.equal(portions[0].mult, 499);
   assert.equal(portions[0].weight, 1);
   assert.throws(
-    () => normalizeSlip({ side: 'Edge', orientation: ['N'] }),
+    () => normalizeSlip({ side: 'Edge', orientation: ['NE'] }),
     /edge_is_exclusive|whole wallet/i
   );
 });
@@ -122,7 +122,7 @@ test('a bet covering nothing is refused, not silently swallowed', () => {
 });
 
 test('the total multiple is the weighted average of the rows, never the sum', () => {
-  const slip = normalizeSlip({ side: 'Heads', orientation: ['N'], spin: { line: 9.5, mode: 'exact' } });
+  const slip = normalizeSlip({ side: 'Heads', orientation: ['NE'], spin: { line: 9.5, mode: 'exact' } });
   const { portions } = buildPortions(slip); // 2x, 4x, 32x at the equal split
   const total = totalMultiple(portions);
   assert.ok(Math.abs(total - (2 + 4 + 32) / 3) < 1e-12, `expected the average, got ${total}`);

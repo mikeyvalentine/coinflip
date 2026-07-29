@@ -189,20 +189,22 @@ function firstFailure(sim, { cosTheta, displacement, halfFlips, side }) {
 
 /**
  * Coarse bucket of orientationDeg, per the corrected contract:
- *   N = [0,90)  E = [90,180)  S = [180,270)  W = [270,360)
+ *   NE = [0,90)  SE = [90,180)  SW = [180,270)  NW = [270,360)
  * The betting UI still bets on quadrants; orientationDeg is the fine truth.
+ * Named for the two cardinals a bucket spans BETWEEN, since orientation is
+ * measured clockwise from north.
  */
 export function headingToQuadrant(deg) {
   const d = ((deg % 360) + 360) % 360;
-  if (d < 90) return 'N';
-  if (d < 180) return 'E';
-  if (d < 270) return 'S';
-  return 'W';
+  if (d < 90) return 'NE';
+  if (d < 180) return 'SE';
+  if (d < 270) return 'SW';
+  return 'NW';
 }
 
 /** Half-open orientation range [lo,hi) covered by a quadrant. */
 export function quadrantRange(qd) {
-  return { N: [0, 90], E: [90, 180], S: [180, 270], W: [270, 360] }[qd];
+  return { NE: [0, 90], SE: [90, 180], SW: [180, 270], NW: [270, 360] }[qd];
 }
 
 /**

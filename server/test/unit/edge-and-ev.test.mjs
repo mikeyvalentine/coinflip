@@ -84,13 +84,13 @@ const rimFlip = {
   halfFlips: 20,
   rotations: 10,
   orientationDeg: 12.5,
-  quadrant: 'N',
+  quadrant: 'NE',
   edge: true,
 };
 
 test('a rim landing sweeps side, orientation AND spin even when each one "won"', () => {
   // deliberately construct a slip that matches the flip on every axis
-  const slip = normalizeSlip({ side: 'Heads', orientation: ['N'], spin: { line: 10, mode: 'exact' } });
+  const slip = normalizeSlip({ side: 'Heads', orientation: ['NE'], spin: { line: 10, mode: 'exact' } });
   const { portions } = buildPortions(slip);
   assert.equal(portions.length, 3);
 
@@ -131,7 +131,7 @@ test('the Broke Flip is swept by the rim too, and pays exactly 50 otherwise', ()
 
 test('settled flips return 0.998 of the stake over a large sample', async () => {
   const N = Number(process.env.EV_SAMPLES ?? 60_000);
-  const slip = normalizeSlip({ side: 'Heads', orientation: ['N', 'E'], spin: { line: 11.5, mode: 'higher' } });
+  const slip = normalizeSlip({ side: 'Heads', orientation: ['NE', 'SE'], spin: { line: 11.5, mode: 'higher' } });
   const { portions } = buildPortions(slip);
   const stake = 1_000_000; // large, so integer rounding cannot bias the result
 

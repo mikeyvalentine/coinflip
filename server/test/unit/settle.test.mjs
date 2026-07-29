@@ -13,7 +13,7 @@ const flip = {
   halfFlips: 19,
   rotations: 9.5,
   orientationDeg: 187.42,
-  quadrant: 'S',
+  quadrant: 'SW',
   edge: false,
 };
 
@@ -41,7 +41,7 @@ test('a losing wallet goes to 0 — that is the only way it can', () => {
 test('the stake splits by the spread weights and the payouts add up exactly', () => {
   const slip = normalizeSlip({
     side: 'Heads',                       // 2x   WIN
-    orientation: ['S', 'W'],             // 2x   WIN (landed S)
+    orientation: ['SW', 'NW'],           // 2x   WIN (landed SW)
     spin: { line: 9.5, mode: 'exact' },  // 32x  WIN
     spread: 0.5,
   });
@@ -62,7 +62,7 @@ test('the stake splits by the spread weights and the payouts add up exactly', ()
 test('a mixed result pays only the lines that won', () => {
   const slip = normalizeSlip({
     side: 'Tails',                        // 2x  LOSS
-    orientation: ['S'],                   // 4x  WIN
+    orientation: ['SW'],                  // 4x  WIN
     spin: { line: 9.5, mode: 'higher' },  // 2x  LOSS (landed exactly 9.5)
   });
   const { portions } = buildPortions(slip);
@@ -77,7 +77,7 @@ test('the spread moves volatility, never the money on the table', () => {
   for (const spread of [0, 0.25, 0.5, 0.75, 1]) {
     const slip = normalizeSlip({
       side: 'Heads',
-      orientation: ['S'],
+      orientation: ['SW'],
       spin: { line: 9.5, mode: 'exact' },
       spread,
     });
@@ -93,7 +93,7 @@ test('the spread moves volatility, never the money on the table', () => {
 });
 
 test('money is whole ₿: the settled wallet is always an integer', () => {
-  const slip = normalizeSlip({ side: 'Heads', orientation: ['N', 'E', 'S'] }); // 4/3x
+  const slip = normalizeSlip({ side: 'Heads', orientation: ['NE', 'SE', 'SW'] }); // 4/3x
   const { portions } = buildPortions(slip);
   for (const stake of [1, 7, 13, 51, 137, 999, 100001]) {
     const s = settleNormal({ stake, portions, flip });

@@ -65,7 +65,7 @@ console.log('  quadrant spread', quadHist, 'side spread', sideHist);
 
 // --- legacy outcome with no orientationDeg (quadrant only) -----------------
 let legacyFails = 0;
-for (const q of ['N', 'E', 'S', 'W']) {
+for (const q of ['NE', 'SE', 'SW', 'NW']) {
   const clip = buildProceduralClip({ startFace: 'Heads', side: 'Heads', spins: 12, quadrant: q }, { seed: 'legacy' + q });
   const v = verifyClip(clip);
   if (!v.pass || v.finalQuadrant !== q) legacyFails++;

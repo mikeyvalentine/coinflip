@@ -156,7 +156,11 @@ export const HALF_FLIPS = [];
 for (let h = HALF_FLIP_MIN; h <= HALF_FLIP_MAX; h++) {
   if (h !== HALF_FLIP_EXCLUDED) HALF_FLIPS.push(h);
 }
-export const QUADRANTS = ['N', 'E', 'S', 'W'];
+// A bucket spans BETWEEN two cardinals — orientation is clockwise from north,
+// so [0,90) runs from north to east — hence the two-letter names. N/E/S/W are
+// reserved for exact 90-degree multiples. Order is load-bearing: the packed
+// library stores the quadrant as an INDEX into this array.
+export const QUADRANTS = ['NE', 'SE', 'SW', 'NW'];
 export const CELL_COUNT = HALF_FLIPS.length * QUADRANTS.length;  // 32 * 4 = 128
 
 export function cellKey(halfFlips, quadrant) {

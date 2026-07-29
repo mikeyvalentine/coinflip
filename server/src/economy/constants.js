@@ -44,7 +44,10 @@ export const SPIN_ROTATION_VALUES = SPIN_HALF_VALUES.map(toRotations);
 // The angle the coin's face is turned to once it settles — about the coin
 // itself, never where on the table it landed. Resolved to two decimals; the
 // quadrants are the coarse buckets the current UI bets on.
-export const QUADRANTS = ['N', 'E', 'S', 'W'];
+// Named for the two cardinals each bucket spans BETWEEN: orientation is
+// clockwise from north, so [0,90) is the north-east sector. N/E/S/W are
+// reserved for exact 90-degree multiples.
+export const QUADRANTS = ['NE', 'SE', 'SW', 'NW'];
 export const ORIENTATION_PRECISION = 100; // hundredths of a degree
 
 // --- multipliers (all fair / zero-edge) -------------------------------------

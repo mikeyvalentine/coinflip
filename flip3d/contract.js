@@ -92,9 +92,24 @@ export const GLB_CORRECTION_QUAT = [-0.5, -0.5, -0.5, 0.5]; // x,y,z,w — exact
 export const TABLE_TOP_DIAMETER_M = 1.05;
 
 // --- orientation + quadrants ----------------------------------------------
-export const QUADRANTS = ['N', 'E', 'S', 'W'];
-/** Bucket edges, degrees. N=[0,90) E=[90,180) S=[180,270) W=[270,360). */
-export const QUAD_RANGES = { N: [0, 90], E: [90, 180], S: [180, 270], W: [270, 360] };
+// NAMING. A bucket spans BETWEEN two cardinals, so it is named for both of
+// them: ORIENTATION is measured clockwise from north, so [0,90) runs FROM north
+// TO east and is the NORTH-EAST sector. This used to be called 'N', which read
+// as "pointing north" when it actually means "pointing somewhere between north
+// and east" — and it disagreed with coinflip-preview.html, the gameplay source
+// of truth, which has always used the two-letter names.
+//
+// The single-letter names N/E/S/W are now RESERVED for exact 90-degree
+// multiples — see `exactCardinal()`. Orientation carries two decimals, so an
+// exact cardinal is a 1-in-9000 event per bucket edge: if you ever see one, it
+// is remarkable, which is precisely why it deserves a name of its own rather
+// than sharing one with 90 degrees of ordinary outcomes.
+export const QUADRANTS = ['NE', 'SE', 'SW', 'NW'];
+/** Bucket edges, degrees. NE=[0,90) SE=[90,180) SW=[180,270) NW=[270,360). */
+export const QUAD_RANGES = { NE: [0, 90], SE: [90, 180], SW: [180, 270], NW: [270, 360] };
+
+/** The four exact cardinals, in bucket-edge order: the low edge of each bucket. */
+export const CARDINALS = ['N', 'E', 'S', 'W'];
 
 /** Compass angle in radians, clockwise from -Z: 0 = N, +pi/2 = E, pi = S. */
 export function dirToCompass(x, z) { return Math.atan2(x, -z); }
@@ -116,14 +131,37 @@ export function orientationFromQuat(q) {
 
 /**
  * Snap to the two decimals that ARE the truth (§6.5). Do this before bucketing
- * or displaying: a measured 89.999999998 is the outcome's 90.00, quadrant E,
- * and 359.999999 wraps to 0.00, quadrant N.
+ * or displaying: a measured 89.999999998 is the outcome's 90.00, quadrant SE,
+ * and 359.999999 wraps to 0.00, quadrant NE.
  */
 export function roundOrientation(deg) { return normDeg(Math.round(normDeg(deg) * 100) / 100); }
 
-/** Bet bucket for an orientation. Always bucket the rounded value. */
+/**
+ * Bet bucket for an orientation. Always bucket the rounded value.
+ *
+ * ALWAYS RETURNS ONE OF EXACTLY FOUR VALUES, including on an exact cardinal:
+ * 90.00 buckets as SE, the sector it opens. Every consumer assumes four — the
+ * dial has four sectors, the library has four cells per spin count, and the
+ * price is 4/(sectors chosen). A bucket function that occasionally returned a
+ * fifth value would break all three at once, on the rarest possible input,
+ * which is the worst time to find out. If you want to KNOW it was exact, ask
+ * `exactCardinal()`; that is a separate question and it has a separate answer.
+ */
 export function quadrantFromOrientation(deg) {
   return QUADRANTS[Math.floor(roundOrientation(deg) / 90) % 4];
+}
+
+/**
+ * The exact cardinal an orientation sits on, or null — which is almost always.
+ *
+ * This is where the reserved single-letter names live. Orientation is true to
+ * two decimals, so a bucket edge is hit by 1 of its 9000 possible values: rare
+ * enough to be worth calling out, and rare enough that nothing may DEPEND on
+ * it. Presentation only — never bucket, price, or select a clip from this.
+ */
+export function exactCardinal(deg) {
+  const d = roundOrientation(deg);
+  return d % 90 === 0 ? CARDINALS[(d / 90) % 4] : null;
 }
 
 /** Mid-bucket orientation, used only when a legacy outcome carries no angle. */

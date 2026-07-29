@@ -46,7 +46,7 @@ console.log('=== A. THE HAZARD: orientation with yaw0 = 0, over many launches ==
   }
   const q = (arr) => {
     const h = { N: 0, E: 0, S: 0, W: 0 };
-    for (const o of arr) h[o < 90 ? 'N' : o < 180 ? 'E' : o < 270 ? 'S' : 'W']++;
+    for (const o of arr) h[o < 90 ? 'NE' : o < 180 ? 'SE' : o < 270 ? 'SW' : 'NW']++;
     return h;
   };
   const spread = (arr) => {
@@ -115,7 +115,7 @@ console.log('\n=== C. Does a uniform random yaw0 make orientation uniform? ===')
     n++;
     bins[Math.floor(c.meta.orientationDeg / 30)]++;
     const qi = Math.floor(c.meta.orientationDeg / 90);
-    quads[['N', 'E', 'S', 'W'][qi]]++;
+    quads[['NE', 'SE', 'SW', 'NW'][qi]]++;
     byParity[c.meta.halfFlips % 2 === 0 ? 'even' : 'odd'][qi]++;
   }
   console.log(`  n=${n}, 30-degree bins: ${bins.join(' ')}`);

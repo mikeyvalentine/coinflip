@@ -182,7 +182,7 @@ console.log('\n=== (5) power -> the visible character of the throw ===');
   for (const p of [0, 0.5, 1]) {
     const t = throwProfile(p);
     const clip = buildProceduralClip(
-      { startFace: 'Heads', side: 'Heads', spins: 12, orientationDeg: 40, quadrant: 'N' },
+      { startFace: 'Heads', side: 'Heads', spins: 12, orientationDeg: 40, quadrant: 'NE' },
       { seed: 'apex', airborneSec: t.airborneSec },
     );
     const a = analyzeClip(clip);

@@ -60,7 +60,9 @@
 export const MAGIC = 0x31434643;        // "CFC1" little-endian
 export const VERSION = 1;
 export const GRAVITY = 9.81;
-export const QUADRANTS = ['N', 'E', 'S', 'W'];
+// Order is the wire format: the pack stores a quadrant as an index into this
+// array, so these may be RENAMED but never REORDERED without a version bump.
+export const QUADRANTS = ['NE', 'SE', 'SW', 'NW'];
 
 /** i16 <-> unit range. 32767 steps over [-1,1] is 3.05e-5, i.e. 0.0035 deg. */
 export const I16 = 32767;

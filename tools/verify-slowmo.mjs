@@ -399,7 +399,7 @@ console.log('\n=== (8) the procedural fallback ramps too ===');
 {
   // The fallback clip starts on the table and has no lead-in, but it is still a
   // clip and the player warps it the same way. Anchoring must survive that.
-  const outcome = { startFace: 'Heads', side: 'Tails', spins: 27, orientationDeg: 25.34, quadrant: 'N' };
+  const outcome = { startFace: 'Heads', side: 'Tails', spins: 27, orientationDeg: 25.34, quadrant: 'NE' };
   const clip = buildProceduralClip(outcome, { seed: 'slowmo-check' });
   const a = analyzeClip(clip);
   const w = makeClipWarp(clip, a, true);

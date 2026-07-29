@@ -120,14 +120,14 @@ check('  heading(-Z) deg', heading(0, -1), 0, 1e-9);
 check('  heading(+X) deg', heading(1, 0), 90, 1e-9);
 check('  heading(+Z) deg', heading(0, 1), 180, 1e-9);
 check('  heading(-X) deg', heading(-1, 0), 270, 1e-9);
-check('  0 -> N', headingToQuadrant(0), 'N');
-check('  89.99 -> N', headingToQuadrant(89.99), 'N');
-check('  90 -> E', headingToQuadrant(90), 'E');
-check('  179.99 -> E', headingToQuadrant(179.99), 'E');
-check('  180 -> S', headingToQuadrant(180), 'S');
-check('  269.99 -> S', headingToQuadrant(269.99), 'S');
-check('  270 -> W', headingToQuadrant(270), 'W');
-check('  359.99 -> W', headingToQuadrant(359.99), 'W');
+check('  0 -> NE', headingToQuadrant(0), 'NE');
+check('  89.99 -> NE', headingToQuadrant(89.99), 'NE');
+check('  90 -> SE', headingToQuadrant(90), 'SE');
+check('  179.99 -> SE', headingToQuadrant(179.99), 'SE');
+check('  180 -> SW', headingToQuadrant(180), 'SW');
+check('  269.99 -> SW', headingToQuadrant(269.99), 'SW');
+check('  270 -> NW', headingToQuadrant(270), 'NW');
+check('  359.99 -> NW', headingToQuadrant(359.99), 'NW');
 {
   // Coin yawed 90 deg: body +X points to +Z (South) => settle angle 180.
   const q = axisAngle([0, 1, 0], -Math.PI / 2);
