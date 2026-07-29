@@ -90,9 +90,25 @@ console.log('=== (1) the parameters are sane and the tilt caps bind ===');
   // actually applies — checking maxTiltForHeight(y0) instead would be testing a
   // bound nothing is computed from.
   const capAt = (y0) => maxTiltForHeight(REST_Y + Math.max(y0 - REST_Y, 0) * TILT_HEADROOM);
-  const bound = ALL.filter((c) => Math.abs(c.p.tiltRad - capAt(c.p.y0)) < 1e-9).length;
-  ok(bound > 0, 'the geometric cap never binds anywhere in the sweep', { bound });
-  console.log(`  the geometric cap binds on ${bound}/${ALL.length} drops (it is load-bearing, not decorative)`);
+  // This used to assert the cap BINDS somewhere ("a guard that never fires is
+  // decoration"). That was true when the lift ceiling was 32 mm. It is now
+  // 94 mm, and because a variant's tilt scales with the drop height too, the
+  // two grow together and the cap never catches — measured across the whole
+  // sweep, the closest approach is well clear.
+  //
+  // Asserting that a SAFETY guard fires in normal play is the wrong test for a
+  // guard. What must hold is that it is never VIOLATED, plus that the function
+  // itself clamps when handed something over-large — which line 86 already
+  // proves by inverting it. So: check the invariant, and report the margin so
+  // that if a future change starts crowding the cap it is visible rather than
+  // silent.
+  const margins = ALL.map((c) => capAt(c.p.y0) - c.p.tiltRad);
+  const violations = margins.filter((m) => m < -1e-9).length;
+  const tightest = Math.min(...margins);
+  ok(violations === 0, 'a drop tilts further than the geometry allows — it would clip the table',
+    { violations, tightest });
+  console.log(`  the geometric cap is never violated; tightest margin ${(tightest * DEG).toFixed(2)} deg`);
+  console.log('  (it no longer BINDS in normal play — the 94 mm ceiling left it headroom)');
 
   // and the headroom must leave a REAL fall at every height, which is the whole
   // reason it exists — a fall shorter than a frame is a snap, not a drop
@@ -293,7 +309,14 @@ console.log('\n=== (5) continuity — no teleport at any display rate ===');
     worstJoinY = Math.max(worstJoinY, Math.abs(after.pos[1] - before.pos[1]));
     worstJoinTilt = Math.max(worstJoinTilt, Math.abs(after.tiltRad - before.tiltRad) * DEG);
   }
-  ok(worstJoinY < 1e-9, 'the coin jumps in height at touchdown', { worstJoinY });
+  // 1e-9 m is a NANOMETRE, and it was tuned when the tallest drop was 32 mm.
+  // The lift ceiling is now 94 mm — a 3x longer fall, so the parabola carries
+  // ~3x the magnitude into the same floating-point subtraction at the join.
+  // The measured worst is ~1.4 nm, i.e. still float noise, and a micron is four
+  // orders of magnitude below anything a 20.5 mm coin can show. Loosened to
+  // what the arithmetic can actually promise rather than to what it happened to
+  // manage at a shorter fall.
+  ok(worstJoinY < 1e-6, 'the coin jumps in height at touchdown', { worstJoinY });
   ok(worstJoinTilt < 1e-6, 'the coin jumps in tilt at touchdown', { worstJoinTilt });
   console.log(`  fall -> settle join: height step ${worstJoinY.toExponential(2)} m, `
     + `tilt step ${worstJoinTilt.toExponential(2)} deg`);

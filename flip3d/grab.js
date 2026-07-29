@@ -1,104 +1,185 @@
 // flip3d/grab.js
 // ---------------------------------------------------------------------------
-// THE PICK-UP GESTURE — press the coin to PICK IT UP, wind up, and release to
-// throw. Replaces charge.js's press-and-drag-down charge, which measured power
-// from the press point and so had no notion of a wind-up at all.
+// THE THROW — press the coin, wind up, and throw it. Two phases, measured the
+// way a real throw is: the pull-back records DISTANCE, the up-stroke records
+// SPEED, and the up-stroke is what actually throws the coin.
 //
-// The stroke has two halves and the ANCHOR is what separates them:
+// WHAT THIS REPLACED AND WHY. The previous model was a spring: an anchor
+// tracked the highest point of the stroke and power was how far you pulled DOWN
+// from it, so releasing at the bottom of the pull threw hardest. It measured
+// correctly and it was backwards — nobody throws by letting go at the bottom of
+// a downswing. Played on a real screen it read as winding a catapult, not as
+// throwing a coin.
 //
-//   * moving UP raises the anchor. The anchor is the highest point the coin has
-//     reached this stroke, so lifting is not itself power — it is buying room
-//     to pull through. A big lift makes a big throw POSSIBLE, nothing more.
-//   * moving DOWN from the anchor is the pull, and the pull IS the power:
-//     (pointerY - anchorY) / PULL_TRAVEL_PX, clamped.
+// THE TWO PHASES
 //
-// Screen Y grows downward, so the anchor is a running MINIMUM of pointerY.
+//   apexY   the top the pull-back is measured from.
+//   deepY   the bottom of the pull-back — the deepest the hand has gone.
 //
-// WHY RELATIVE AND NOT ABSOLUTE HEIGHT. Mapping power to how high the coin sits
-// would mean the gesture starts wrong: the coin is on the table, so power would
-// begin at 0 and the only way to charge would be to lift, leaving nothing to
-// pull against. Measuring the pull instead means the wind-up and the throw are
-// the same motion, and it is the one the player already makes.
+//   wind    = deepY - apexY      how far back you pulled.      MINOR term.
+//   throw   = deepY - pointerY   how far back up you have come. MAJOR term,
+//                                together with the SPEED you are doing it at.
 //
-// THE IDLE RE-ARM is the recovery affordance: hold still for IDLE_RESET_MS and
-// the anchor snaps to where the coin is now, dropping power to 0. A botched
-// wind-up is undone by doing nothing, which is what a hand does when it has
-// lost its place. It is a RE-ARM, NOT a cancel — the coin stays in your hand.
+// So during the pull-back the meter fills slowly, and during the up-stroke it
+// fills the rest — which is the behaviour that was asked for, and it falls out
+// of the geometry rather than being special-cased.
 //
-// It is driven by tick(), not by a timer. Nothing fires a pointermove while the
-// pointer is still, so a move-driven re-arm would only ever fire on the twitch
-// that ENDED the stillness — exactly backwards. And the preview pane is usually
-// hidden, where requestAnimationFrame never fires and setTimeout is throttled,
-// so a setTimeout-driven one could not be tested at all. The host calls tick()
-// from its render loop; the clock is injectable; the verifier advances time by
-// hand and no real milliseconds pass.
+// TELLING A SETUP LIFT FROM A THROW IS THE HARD PART, and position alone cannot
+// do it — both move the pointer upward. The first version of this reset the
+// wind-up on any new high, which quietly destroyed every throw that carried
+// above the grab point: the stroke it was measuring vanished at the moment it
+// mattered, and power collapsed to the velocity term alone. See stepPhase().
 //
-// As in charge.js, the state machine is deliberately separate from any pixels:
-// this file has no DOM writes and no scene knowledge. The coin's position in
-// the world comes from an injected toWorldY(); with none it works purely in CSS
-// px, which is how the whole thing is testable with no browser present.
+// THE SPLIT IS 25 / 75. "Majority" was the instruction. 75% on the throw makes
+// the up-stroke unambiguously the thing that matters, while 25% is still a
+// visible quarter of the meter — enough that a big wind-up reads as worth
+// making. Pushing it to 90/10 was tried on paper and rejected: it makes the
+// pull-back decorative, and the instruction was that it fills the meter, just
+// slowly. Inside the throw's 75, speed carries 50 and distance 25, so velocity
+// is the single largest term of the three.
+//
+// WHY VELOCITY IS MEASURED OVER A TIME WINDOW, NOT BETWEEN TWO EVENTS.
+// A last-two-events delta is a sample of noise: at 240 Hz two adjacent moves are
+// 4 ms apart and a single 1 px jitter reads as 250 px/s. Worse, the SAME throw
+// would measure differently on a 60 Hz mouse and a 240 Hz one, because the delta
+// covers a different slice of time. Taking the endpoints of a fixed 60 ms window
+// makes the estimate rate-independent by construction: both mice are asked the
+// same question — where was the pointer 60 ms ago — and both answer it the same.
+// 60 ms because a flick lasts 80-150 ms, so the window sits inside the fast part
+// without averaging in the stationary approach to it.
+//
+// RELEASING WHILE STILL MOVING DOWN IS A DROP, NOT A WEAK THROW. Letting go
+// mid-downswing is not a throw in any physical sense — the coin has downward
+// momentum and should fall. It is reported as a cancel, which the host already
+// answers with the drop animation, so the coin behaves exactly as a real one
+// would. This is checked BEFORE the power floor, so a big wind-up released on
+// the way down still drops rather than sneaking past on its wind-up alone.
+//
+// THE IDLE RE-ARM survives, with "botched" redefined for the new model: a hand
+// that wound up and then stopped, without throwing. Hold still for
+// IDLE_RESET_MS and the wind-up goes stale — apex and deep collapse to where you
+// are and the meter empties. It is a RE-ARM, NOT a cancel; the coin stays held.
+// It is driven by tick() rather than a timer, because a motionless pointer emits
+// no events and the preview pane never fires requestAnimationFrame anyway.
+//
+// THE SETTLE WINDOW. Picking the coin up moves the camera (scene.js#HOLD_SHOT
+// drops the table out of the way to make room to throw in), and while that
+// transition runs the pixels-to-metres mapping is changing underneath the hand.
+// Measuring a stroke against a moving ruler would make the same gesture worth
+// different amounts depending on how fast the player started. So for settleMs
+// after the grab the coin still follows the pointer — it must, or the pick-up
+// feels dead — but apex and deep are re-based to the live position every event,
+// so measurement effectively begins from wherever the hand is when the camera
+// stops. Default 0, so nothing that does not opt in is affected.
+//
+// As before, the state machine is deliberately separate from any pixels: no DOM
+// writes and no scene knowledge. The coin's world height comes from an injected
+// toWorldY(); with none it works purely in CSS px, which is what makes the whole
+// thing testable with no browser present.
 // ---------------------------------------------------------------------------
 
 import { MIN_POWER, clamp01 } from './power.js';
 
 /**
- * Downward travel, in CSS px, that spans a 0 -> 1 pull.
+ * Fallback travel, in CSS px, spanning a 0 -> 1 pull-back or up-stroke.
  *
- * Deliberately the same 190 px as the charge gesture it replaces: the pull is
- * the same physical motion the player was already making, so the tuned
- * sensitivity carries over unchanged. What differs is where the measurement
- * starts from — the anchor rather than the press.
+ * Only used when the host does not pass a `travelPx`. The real game always does
+ * — it derives it from the coin's visible lift band, so the gesture measures the
+ * same thing at every canvas size. See the note on travelPx below.
  */
 export const PULL_TRAVEL_PX = 190;
 
-/**
- * Stillness, in ms, that re-arms the wind-up.
- *
- * A deliberate pause mid-gesture is a few hundred ms — reversing direction, or
- * simply aiming — and eating those would make the coin feel like it was
- * fighting the player. A lost-my-place pause is around a second. 900 ms sits
- * past the first and inside the second.
- */
+/** Stillness, in ms, that re-arms a stale wind-up. */
 export const IDLE_RESET_MS = 900;
 
 /**
  * Movement under this, in CSS px, still counts as holding still.
  *
- * Hand tremor and trackpad noise run 1-2 px. Measured against the last
- * SIGNIFICANT position rather than the last event, which is the part that
- * matters: a slow deliberate drag emits many sub-threshold moves, and against
- * the previous event each one would read as stillness and the wind-up would
- * re-arm underneath a player who was still moving. Against the last
- * significant position the movement accumulates and correctly crosses.
+ * Measured against the last SIGNIFICANT position rather than the last event: a
+ * slow deliberate drag emits many sub-threshold moves, and against the previous
+ * event every one of them reads as stillness, so the wind-up would re-arm
+ * underneath a player who was still moving. Against the last significant
+ * position the movement accumulates and correctly crosses.
  */
 export const IDLE_MOVE_EPS_PX = 3;
 
+// --- the power split -------------------------------------------------------
+/** Pull-back distance. The minor term — see the header. */
+export const WIND_WEIGHT = 0.25;
+/** Up-stroke SPEED. The single largest term. */
+export const VEL_WEIGHT = 0.50;
+/** Up-stroke DISTANCE. */
+export const THROW_DIST_WEIGHT = 0.25;
+
 /**
- * Pick up, wind up, release.
+ * Full-power throw speed, expressed as SECONDS TO CROSS THE WHOLE LIFT BAND.
+ *
+ * Band-relative, not absolute px/s, and that is the whole point. The distance
+ * terms are already measured against the band so they mean the same thing at
+ * every canvas size; an absolute velocity threshold would not, and full power
+ * would get progressively cheaper as the window grew — a 1920-wide canvas has a
+ * 753 px band against 209 px on a phone, so the same hand movement covers 3.6x
+ * the pixels. That is the identical bug the fixed 190 px travel used to have.
+ *
+ * THE VALUE IS AN ASSUMPTION and is the one most likely to need retuning against
+ * a real hand. 0.175 s to cross the band works out to ~2200 px/s on the default
+ * 880x550 canvas. Ordinary mouse flicks measure 2000-4000 px/s and touch swipes
+ * 1500-3000, so that sits at the bottom of both ranges: reachable without a
+ * violent gesture on either device, and comfortably exceeded by a hard one,
+ * which is what the clamp is for. Setting it at the TOP of those ranges would
+ * make full power a wrist injury on a trackpad.
+ */
+export const VEL_FULL_BAND_SEC = 0.175;
+
+/**
+ * The absolute equivalent on the default canvas, kept for reference and for the
+ * fallback when no travel is supplied. Derived, not chosen.
+ */
+export const VEL_FULL_PX_S = Math.round(PULL_TRAVEL_PX / VEL_FULL_BAND_SEC);
+
+/** Window, in ms, the velocity estimate spans. See the header for why. */
+export const VEL_WINDOW_MS = 60;
+
+/**
+ * Upward speed, px/s, below which a release is a DROP rather than a throw.
+ *
+ * Above hand tremor and trackpad noise (which run tens of px/s at most), well
+ * below any deliberate lift. A release slower than this had no throw in it.
+ */
+export const MIN_THROW_VEL_PX_S = 120;
+
+/**
+ * Direction changes smaller than this, in CSS px, are noise rather than a
+ * reversal. Sits just above IDLE_MOVE_EPS_PX so a hand that is "still" by the
+ * idle test cannot also be flipping the wind/throw phase back and forth.
+ */
+export const REVERSE_EPS_PX = 4;
+
+/**
+ * Press, wind up, throw.
  *
  * @param {HTMLElement} el the control (the canvas)
  * @param {object} hooks
  * @param {(ev:object)=>boolean} [hooks.canStart] gate: false ignores a press.
- *        Receives the event, so the host can raycast the coin before allowing
- *        a pick-up — this module does no hit testing of its own.
+ *        Receives the event, so the host can raycast the coin — this module does
+ *        no hit testing of its own.
  * @param {(info:object)=>void} [hooks.onGrab] the coin has been picked up
  * @param {(power:number, info:object)=>void} [hooks.onChange] power OR position
- *        moved. Unlike charge.js this fires on position too, because the coin
- *        has to follow the pointer even across moves that do not change power
- *        (any move at or above the anchor).
- * @param {(info:object)=>void} [hooks.onRearm] the wind-up reset under a still hand
+ *        moved. Fires on position too, because the coin has to track the pointer
+ *        across moves that do not change power at all.
+ * @param {(info:object)=>void} [hooks.onRearm] the wind-up went stale
  * @param {(power:number, info:object)=>void} [hooks.onThrow]
- * @param {(reason:string, info:object)=>void} [hooks.onCancel]
+ * @param {(reason:string, info:object)=>void} [hooks.onCancel] 'dropped',
+ *        'below-minimum', 'escape', 'pointercancel'
  * @param {()=>number} [hooks.now] injectable clock, ms
- * @param {number} [hooks.minPower] floor below which a release is "put it back
- *        down" rather than a throw. Defaults to power.js#MIN_POWER.
- * @param {(y:number)=>number} [hooks.clampY] restrict the pointer to the band
- *        the coin can actually occupy, so power tracks its VISIBLE travel
- * @param {number|(()=>number)} [hooks.travelPx] px spanning a 0->1 pull. A
- *        function is re-read every frame, so it survives a canvas resize.
- * @param {(clientY:number)=>number} [hooks.toWorldY] CSS px -> world metres.
- *        Owned by scene.js; absent, `worldY` is reported as null and everything
- *        else is unaffected.
+ * @param {number} [hooks.settleMs] ignore measurement for this long after the
+ *        grab, while the camera framing transitions. Default 0.
+ * @param {number} [hooks.minPower] floor below which a release is a put-back
+ * @param {(y:number)=>number} [hooks.clampY] restrict the pointer to the band the
+ *        coin can actually occupy, so power tracks its VISIBLE travel
+ * @param {number|(()=>number)} [hooks.travelPx] px spanning a full stroke. A
+ *        function is re-read every event, so it survives a canvas resize.
+ * @param {(clientY:number)=>number} [hooks.toWorldY] CSS px -> world metres
  * @param {object} [hooks.root] where window-level listeners go (default globalThis)
  */
 export function createGrab(el, hooks = {}) {
@@ -110,26 +191,17 @@ export function createGrab(el, hooks = {}) {
   const onCancel = hooks.onCancel ?? (() => {});
   const now = hooks.now ?? (() => performance.now());
   const toWorldY = hooks.toWorldY ?? null;
+
   // ---------------------------------------------------------------------
-  // BOTH OF THESE MAY BE FUNCTIONS, and for the real game both are.
+  // travelPx MAY BE A FUNCTION, and in the real game it is.
   //
-  // The coin's lift is bounded by the frame (scene.js#LIFT), and that bound is
-  // in METRES while this file measures in PIXELS. The two are related by a
-  // projection that depends on the canvas size, so a fixed pixel travel means
-  // the gesture measures something different at every window size: on an
-  // 880x550 canvas the whole lift band is 196 px, but it is 107 px at 480x300
-  // and 384 px at 1920x1080. Against a fixed 190 px that is a full-lift-and-
-  // slam worth 0.56 power on the small canvas and 2.02 on the large one — the
-  // same motion, three different throws.
-  //
-  // And the coin CLAMPS at the ceiling while the pointer does not, so a pointer
-  // driven far above the frame banks wind-up the coin never visibly made: 300 px
-  // above the ceiling is 300 px of pull that shows on the meter and nowhere else.
-  //
-  // Passing `clampY` (the lift band, in px) and a `travelPx` function (the height
-  // of that same band) makes the pull exactly the coin's VISIBLE travel: lift to
-  // the ceiling, slam to the table, and that is 1.0 on any canvas, because it is
-  // the same gesture measured in its own units.
+  // The coin's lift is bounded in METRES by the frame (scene.js#LIFT) while
+  // this file measures in PIXELS, and the projection between them depends on
+  // canvas size. A fixed pixel travel therefore measures something different at
+  // every window size — the same stroke would be worth 0.56 power on a small
+  // canvas and 2.02 on a large one. Passing the live band height keeps one full
+  // stroke worth exactly 1.0 everywhere, because it is the same gesture measured
+  // in its own units.
   // ---------------------------------------------------------------------
   const travelPxOpt = hooks.travelPx ?? PULL_TRAVEL_PX;
   const travelOf = () => {
@@ -138,11 +210,10 @@ export function createGrab(el, hooks = {}) {
     // the constant rather than poisoning every reading downstream.
     return Number.isFinite(v) && v > 0 ? v : PULL_TRAVEL_PX;
   };
-  // MIN_POWER was tuned for charge.js, where charging required a deliberate
-  // downward drag and an accidental one was hard to make. Here the coin follows
-  // the pointer for the WHOLE gesture, so a twitch on release is a live throw —
-  // and a throw spends the player's one flip for the day. Overridable for that
-  // reason; the default stays put so nothing else changes.
+
+  // The coin follows the pointer for the whole gesture, so a twitch on release
+  // would be a live throw — and a throw spends the player's one flip for the
+  // day. Overridable for that reason; the default stays put.
   const minPower = Number.isFinite(hooks.minPower) ? hooks.minPower : MIN_POWER;
   const clampYOpt = hooks.clampY ?? null;
   const clampY = (y) => {
@@ -152,46 +223,163 @@ export function createGrab(el, hooks = {}) {
   };
   const idleResetMs = hooks.idleResetMs ?? IDLE_RESET_MS;
   const idleEpsPx = hooks.idleEpsPx ?? IDLE_MOVE_EPS_PX;
+  const settleMs = Number.isFinite(hooks.settleMs) && hooks.settleMs > 0 ? hooks.settleMs : 0;
+  const velWindowMs = Number.isFinite(hooks.velWindowMs) && hooks.velWindowMs > 0
+    ? hooks.velWindowMs : VEL_WINDOW_MS;
+  // Re-read every time, because travelOf() can change with the canvas.
+  const velFullOf = () => (Number.isFinite(hooks.velFullPxS) && hooks.velFullPxS > 0
+    ? hooks.velFullPxS
+    : travelOf() / VEL_FULL_BAND_SEC);
+  const minThrowVel = Number.isFinite(hooks.minThrowVelPxS) && hooks.minThrowVelPxS >= 0
+    ? hooks.minThrowVelPxS : MIN_THROW_VEL_PX_S;
   const root = hooks.root ?? (typeof globalThis !== 'undefined' ? globalThis : null);
 
   let held = false;
   let pointerId = null;
-  let anchorY = 0;          // top of the stroke: a running MINIMUM of pointerY
+  let apexY = 0;            // running MIN of pointerY — the highest the hand has been
+  let deepY = 0;            // running MAX since the apex last moved — bottom of the pull
   let pointerX = 0, pointerY = 0;
-  let grabX = 0, grabY = 0; // where the coin was picked up
+  let grabX = 0, grabY = 0;
   let restX = 0, restY = 0; // last position that counted as real movement
-  let restT = 0;            // when the pointer arrived there
+  let restT = 0;
   let grabT = 0;
   let power = 0;
   let peak = 0;
-  let rearmed = false;      // suppresses a second re-arm inside one still spell
+  let rearmed = false;
+  let samples = [];         // {t, y} for the velocity window
+  let phase = 'wind';       // 'wind' (pulling back) | 'throw' (up-stroke)
+  let prevY = 0;            // previous pointerY, for direction inside a throw
+  let deepT = 0;            // when the pointer was last at deepY — see upVelocity
 
   if (el && el.style) el.style.touchAction = 'none';
 
+  /** Still inside the camera transition, so nothing is measured yet. */
+  const settling = () => settleMs > 0 && held && (now() - grabT) < settleMs;
+
+  const windPx = () => Math.max(0, deepY - apexY);
+  // Only the throw phase has a throw distance. In the wind phase the pointer is
+  // at or below the deepest point by construction, so this would otherwise
+  // report a slow reposition upward as throw distance.
+  const throwPx = () => (phase === 'throw' ? Math.max(0, deepY - pointerY) : 0);
+
+  /**
+   * The wind / throw phase machine.
+   *
+   * The hard part is telling a SETUP LIFT from a THROW. Both move the pointer
+   * upward, and position alone cannot separate them — which is exactly the bug
+   * the first version had: a throw that carried above the grab point looked like
+   * a new lift, reset the wind-up, and threw away the stroke it was measuring.
+   *
+   * The honest discriminator is SPEED. Repositioning is slow; a throw is not.
+   * So an upward move only becomes a throw once it is moving faster than
+   * MIN_THROW_VEL_PX_S — the same floor that decides a release was a throw at
+   * all, reused rather than a second tunable that could drift away from it.
+   *
+   * Reversing downward inside a throw hands control back to the wind phase, so
+   * "lift, pull, half-throw, change your mind, pull deeper, throw" all works
+   * without any of it being special-cased.
+   */
+  function stepPhase(y) {
+    if (phase === 'wind') {
+      if (y > deepY) { deepY = y; deepT = now(); return; }  // pulling down
+      if (y < deepY - REVERSE_EPS_PX && upVelocity() >= minThrowVel) {
+        phase = 'throw';                                    // a real up-stroke
+        return;
+      }
+      // A slow move upward is repositioning: it raises the top the pull will be
+      // measured from, and spends whatever was wound before.
+      if (y < apexY) { apexY = y; deepY = y; deepT = now(); }
+      return;
+    }
+    // phase === 'throw'
+    if (y > prevY + REVERSE_EPS_PX) {
+      phase = 'wind';                                       // changed their mind
+      apexY = Math.min(apexY, prevY);
+      deepY = y; deepT = now();
+    }
+  }
+
+  /**
+   * Upward pointer speed in px/s, from the endpoints of the velocity window.
+   * Positive is upward (screen Y grows downward, so the sign flips here).
+   *
+   * Endpoints rather than an average of per-event deltas: that is what makes
+   * the number the same on a 60 Hz mouse and a 240 Hz one.
+   */
+  function upVelocity() {
+    if (samples.length < 2) return 0;
+    const newest = samples[samples.length - 1];
+    // The oldest sample still inside the window AND no older than the bottom of
+    // the pull.
+    //
+    // That second bound is not a nicety. Without it the window can straddle the
+    // reversal at the bottom of a wind-up, and since the estimate is a net
+    // displacement, a fast down-then-up cancels itself out and a hard flick
+    // reads as motionless — worst exactly where the throw is hardest. Clipping
+    // at deepT means the up-stroke's speed is measured over the up-stroke.
+    const floorT = Math.max(newest.t - velWindowMs, deepT);
+    let oldest = samples[samples.length - 1];
+    for (const s of samples) {
+      if (s.t >= floorT) { oldest = s; break; }
+    }
+    // If everything in the buffer is older than the window (a long pause then a
+    // single move), fall back to the last two so a genuine flick is not lost.
+    if (newest.t - oldest.t > velWindowMs && samples.length >= 2) {
+      oldest = samples[samples.length - 2];
+    }
+    const dt = newest.t - oldest.t;
+    if (!(dt > 0)) return 0;
+    return (oldest.y - newest.y) / dt * 1000;
+  }
+
+  function pushSample(y) {
+    const t = now();
+    samples.push({ t, y });
+    // Keep one sample beyond the window so a full window is always spannable.
+    let cut = 0;
+    while (cut < samples.length - 2 && t - samples[cut + 1].t > velWindowMs) cut++;
+    if (cut > 0) samples = samples.slice(cut);
+  }
+
   function info() {
+    const tv = travelOf();
+    const v = upVelocity();
     return {
       power,
       peak,
-      pullPx: pointerY - anchorY,
-      anchorY,
+      windPx: windPx(),
+      throwPx: throwPx(),
+      upVelPxS: v,
+      windNorm: clamp01(windPx() / tv),
+      throwNorm: clamp01(throwPx() / tv),
+      velNorm: clamp01(v / velFullOf()),
+      apexY,
+      deepY,
       pointerY,
       pointerX,
       worldY: toWorldY ? toWorldY(pointerY) : null,
       held,
       rearmed,
+      phase,
+      settling: settling(),
       heldMs: held ? now() - grabT : 0,
     };
   }
 
   /**
-   * Power follows from the anchor; it is never set directly from an event.
+   * Power is DERIVED, never assigned from an event.
    *
-   * Emits unconditionally, where charge.js suppressed unchanged values: the
-   * coin has to track the pointer across moves that do not change power at all
-   * (anything at or above the anchor), so a power-only dedupe would freeze it.
+   * Emits unconditionally rather than deduping on an unchanged value: the coin
+   * has to track the pointer across moves that do not change power at all (any
+   * move while the meter is already clamped), and a power-only dedupe would
+   * freeze it mid-gesture.
    */
   function recompute() {
-    power = clamp01((pointerY - anchorY) / travelOf());
+    const tv = travelOf();
+    const wind = clamp01(windPx() / tv);
+    const dist = clamp01(throwPx() / tv);
+    const vel = clamp01(upVelocity() / velFullOf());
+    power = clamp01(WIND_WEIGHT * wind + VEL_WEIGHT * vel + THROW_DIST_WEIGHT * dist);
     if (power > peak) peak = power;
     onChange(power, info());
   }
@@ -199,13 +387,15 @@ export function createGrab(el, hooks = {}) {
   function rearm() {
     if (!held) return false;
     const had = power > 0;
-    anchorY = pointerY;
+    apexY = pointerY; deepY = pointerY; deepT = now();
+    phase = 'wind'; prevY = pointerY;
+    samples = [];
     restX = pointerX; restY = pointerY;
     restT = now();
     rearmed = true;
     power = 0;
     // A re-arm with nothing wound up changes nothing on screen, and announcing
-    // it would flash a "reset" at a player who had simply not moved yet.
+    // it would flash a reset at a player who had simply not moved yet.
     if (had) { onRearm(info()); onChange(power, info()); }
     return had;
   }
@@ -215,15 +405,18 @@ export function createGrab(el, hooks = {}) {
     const x = ev.clientX, rawY = ev.clientY;
     if (!Number.isFinite(x) || !Number.isFinite(rawY)) return;
     const y = clampY(rawY);
+    const restT0 = now();
+    restT = restT0;
     held = true;
     pointerId = ev.pointerId;
     pointerX = x; pointerY = y;
     grabX = x; grabY = y;
-    anchorY = y;
+    apexY = y; deepY = y; deepT = restT0;
+    phase = 'wind'; prevY = y;
     restX = x; restY = y;
-    restT = now();
-    grabT = restT;
+    grabT = restT0;
     power = 0; peak = 0; rearmed = false;
+    samples = [{ t: grabT, y }];
     try { el.setPointerCapture(ev.pointerId); } catch { /* synthetic events in tests */ }
     onGrab(info());
     onChange(0, info());
@@ -234,48 +427,59 @@ export function createGrab(el, hooks = {}) {
     if (!held || ev.pointerId !== pointerId) return;
     const x = ev.clientX, y = ev.clientY;
     // A non-finite coordinate is a broken event, not a gesture. Letting one
-    // through would poison the anchor and every power reading after it, and
-    // NaN survives clamping.
+    // through would poison the apex and every reading after it, and NaN survives
+    // clamping.
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-
     applyPosition(x, y);
     if (ev.preventDefault) ev.preventDefault();
   }
 
   /**
-   * Take the pointer to (x, y), running the idle clock and the anchor rule.
-   * Shared by move and release: "depending on where you RELEASE" means the
-   * pointerup's own coordinates are part of the gesture, not just the last
-   * pointermove before it. Browsers do deliver a release at a position no move
-   * reported, and dropping it would quietly discard the final few px of pull.
+   * Take the pointer to (x, y), running the idle clock and the apex/deep rule.
+   *
+   * Shared by move and release: the pointerup's own coordinates are part of the
+   * gesture, and browsers do deliver a release at a position no move reported.
+   * Dropping it would discard the last few px — and the fastest part — of a
+   * flick, which is precisely the part the throw is measured on.
    */
   function applyPosition(x, rawY) {
-    // Clamp FIRST, so every downstream quantity — the idle test, the anchor,
-    // the pull — is measured on the position the coin actually took. Clamping
-    // later would let the un-clamped travel leak into one of them.
+    // Clamp FIRST, so the idle test, the apex, the pull and the velocity are all
+    // measured on the position the coin actually took. Clamping later would let
+    // un-clamped travel leak into one of them.
     const y = clampY(rawY);
     const moved = Math.hypot(x - restX, y - restY) > idleEpsPx;
     pointerX = x; pointerY = y;
+    pushSample(y);
 
     if (moved) {
       restX = x; restY = y; restT = now();
       rearmed = false;
     } else if (!rearmed && now() - restT >= idleResetMs) {
-      rearm();       // still, and has been for long enough — the wind-up is stale
+      rearm();     // still, and has been for long enough — the wind-up is stale
       return;
     }
 
-    // The anchor only ever rises. Pulling down cannot lower it, or the pull
-    // would be measured from wherever the hand happened to be and every throw
-    // would read as maximum.
-    if (pointerY < anchorY) anchorY = pointerY;
+    if (settling()) {
+      // The camera is still moving, so the ruler is moving. Track the pointer,
+      // measure nothing: re-base to here and start the stroke from wherever the
+      // hand is when the transition finishes.
+      apexY = y; deepY = y; deepT = now();
+      phase = 'wind'; prevY = y;
+      samples = [{ t: now(), y }];
+      power = 0;
+      onChange(power, info());
+      return;
+    }
+
+    stepPhase(y);
+    prevY = y;
     recompute();
   }
 
   /**
-   * Advance the idle clock. Safe to call every frame, held or not.
-   * This is the ONLY thing that can re-arm a genuinely motionless pointer,
-   * because a motionless pointer emits no events.
+   * Advance the idle clock. Safe to call every frame, held or not. The ONLY
+   * thing that can re-arm a genuinely motionless pointer, because a motionless
+   * pointer emits no events.
    */
   function tick() {
     if (!held || rearmed) return false;
@@ -285,23 +489,28 @@ export function createGrab(el, hooks = {}) {
 
   function finish(ev) {
     if (!held || ev.pointerId !== pointerId) return;
-    // The release position is part of the pull — see applyPosition.
+    // The release position is part of the throw — see applyPosition.
     if (Number.isFinite(ev.clientX) && Number.isFinite(ev.clientY)) {
       applyPosition(ev.clientX, ev.clientY);
     }
+    const v = upVelocity();
     const p = power;
     const snapshot = info();
     end();
-    // Below the minimum this was not a throw — the coin was picked up and put
-    // back down. Releasing a limp gesture as a limp throw is never what was
-    // meant, and the player has already told us so by not pulling.
+
+    // ORDER MATTERS. The drop test comes FIRST, before the power floor: a big
+    // wind-up released on the way down carries enough wind term to clear the
+    // floor, and letting that through would throw a coin the player never threw.
+    if (!(v >= minThrowVel)) { onCancel('dropped', snapshot); return; }
+    // Below the floor it was a fumble, not a throw.
     if (p < minPower) { onCancel('below-minimum', snapshot); return; }
+
     onThrow(p, {
       ...snapshot,
       heldMs: now() - grabT,
-      // The whole stroke, grab to release. dy is NOT the pull: a wind-up that
-      // went up 100 and back down 150 ends 50 px below where it started while
-      // having pulled 150. `pullPx` is the pull; these two are telemetry.
+      // The whole stroke, grab to release. dy is NOT the throw: a wind-up that
+      // went down 150 and back up 100 ends 50 px below where it started while
+      // having thrown 100. `windPx`/`throwPx` are the gesture; these are telemetry.
       dx: pointerX - grabX,
       dy: pointerY - grabY,
     });
@@ -318,7 +527,7 @@ export function createGrab(el, hooks = {}) {
     if (pointerId != null && el) {
       try { el.releasePointerCapture(pointerId); } catch { /* ignore */ }
     }
-    held = false; pointerId = null; power = 0; rearmed = false;
+    held = false; pointerId = null; power = 0; rearmed = false; samples = [];
     onChange(0, info());
   }
 
@@ -344,10 +553,14 @@ export function createGrab(el, hooks = {}) {
     get power() { return power; },
     get peak() { return peak; },
     get held() { return held; },
-    /** charge.js-compatible alias; the host page reads `.active` today. */
+    /** charge.js-compatible alias; the host page reads `.active`. */
     get active() { return held; },
     get minPower() { return minPower; },
-    get anchorY() { return anchorY; },
+    get windPx() { return windPx(); },
+    get throwPx() { return throwPx(); },
+    get upVelPxS() { return upVelocity(); },
+    get phase() { return phase; },
+    get settling() { return settling(); },
     get pointerY() { return pointerY; },
     get worldY() { return toWorldY ? toWorldY(pointerY) : null; },
     tick,

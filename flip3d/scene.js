@@ -43,6 +43,47 @@ const smoothstep = (t) => { const x = clamp(t, 0, 1); return x * x * (3 - 2 * x)
 // readable because that mapping is fixed — see the note in coinflip-3d.html.
 export const READY_SHOT = { target: [0, 0.004, 0], distance: 0.15, elevDeg: 34, azimuthDeg: 0 };
 
+/**
+ * The framing while the coin is HELD. Picking it up drops the table out of the
+ * way and opens the vertical space the throw needs.
+ *
+ * READY_SHOT is a close, low shot built to make the settled coin readable — the
+ * whole frame spans y = -0.055 .. 0.045 m on the lift line, so a throw had about
+ * 3 cm of world and 196 px of screen to happen in. That is not enough room to
+ * wind up and flick in, which is exactly what playing it showed.
+ *
+ * Raising the TARGET is what moves the table down: at target y = 0.05 the table
+ * surface sits 89 px off the bottom of a 550 px canvas instead of through the
+ * middle of it, and everything above is throwing room. Pulling back to 0.22 m
+ * buys the height; dropping the elevation 34 -> 28 keeps the coin's face
+ * readable while widening the vertical span.
+ *
+ * MOVING THE TABLE ITSELF WAS REJECTED. It is the surface the coin lands on, and
+ * the clips are baked against y = 0. A table that slid down for the throw and
+ * back up for the landing would be a moving floor — the coin would either land
+ * on nothing or the world would visibly lie. Moving the camera changes what you
+ * can see; moving the table changes what is true.
+ *
+ * Measured against this shot (tools/verify-pickup.mjs recomputes it rather than
+ * trusting this comment):
+ *   frame top on the lift line   0.1084 m  (was 0.0451)
+ *   usable lift ceiling          0.094 m   (was 0.032)  — 2.9x the room
+ *   stroke, default canvas       385 px    (was 196)    — 2.0x the screen
+ *   coin at rest                 69 px     (was 114)    — still large
+ */
+export const HOLD_SHOT = { target: [0, 0.05, 0], distance: 0.22, elevDeg: 28, azimuthDeg: 0 };
+
+/**
+ * How long the READY -> HOLD framing transition takes, in ms.
+ *
+ * This number is load-bearing twice over: it is a camera move AND it is the
+ * window during which the pixels-to-metres mapping is changing under the
+ * player's hand. grab.js is handed the same figure as its `settleMs` and
+ * measures nothing until it has elapsed — see the settle note in that file.
+ * Short enough not to feel like lag, long enough not to be a cut.
+ */
+export const HOLD_TRANSITION_MS = 180;
+
 export function lerpShot(a, b, k) {
   const t = clamp(k, 0, 1);
   return {
@@ -88,18 +129,23 @@ export function lerpShot(a, b, k) {
 export const LIFT = {
   /** Resting on the table — the coin's centre sits half a thickness up. */
   minY: COIN_HALF_THICKNESS_M,
-  // The ceiling is set by the FRAME, not by taste. With READY_SHOT fixed, the
-  // top edge of the view crosses the plane z = 0 at y = 0.0451 m (asserted in
-  // tools/verify-pickup.mjs, which recomputes it rather than trusting this
-  // comment). Back off by a coin radius so the whole disc stays inside, plus a
-  // little margin, and the ceiling lands at 0.032 m.
+  // The ceiling is set by the FRAME, not by taste — specifically by HOLD_SHOT,
+  // because that is the framing the coin is actually lifted in. Its top edge
+  // crosses the plane z = 0 at y = 0.1084 m (asserted in tools/verify-pickup.mjs,
+  // which recomputes it rather than trusting this comment). Back off a coin
+  // radius so the whole disc stays inside, plus margin, and the ceiling lands at
+  // 0.094 m — leaving ~4 mm of headroom.
   //
-  // Worth knowing, because it is the reason this number is not arbitrary: that
-  // ceiling puts the on-screen stroke from rest to full lift at ~195 px on the
-  // default 880x550 canvas, against power.js#CHARGE_TRAVEL_PX = 190. The lift
-  // the frame can afford and the stroke the power meter already expected are
-  // the same gesture. Neither was tuned to the other.
-  maxY: 0.032,
+  // It used to be 0.032, set by READY_SHOT, and that was the throw's problem:
+  // 3 cm of world and 196 px of screen is not enough room to wind up and flick
+  // in. Against HOLD_SHOT the same construction gives 385 px.
+  //
+  // THE CEILING HAS AN UPPER BOUND AND IT IS NOT THE FRAME. player.js's lead-in
+  // bridges the coin from wherever it was released up to the baked clip's
+  // opening at 0.22 m, and needs at least minBridgeMetres() ~= 18.5 mm to
+  // accelerate through. A ceiling above ~0.2015 m leaves no bridge and the clip
+  // visibly snatches the coin. At 0.094 there is still ~11x that margin.
+  maxY: 0.094,
 };
 
 /** 0 at rest, 1 at full lift. */
@@ -444,6 +490,36 @@ export async function createScene(opts = {}) {
   let framesRendered = 0;
   let drawHook = null;
   let heldY = null;                  // null = not held; otherwise metres
+
+  // --- the hold framing transition ---------------------------------------
+  // Picking the coin up drops the table out of frame (HOLD_SHOT) and putting it
+  // down brings it back. Driven from the render loop rather than by the caller,
+  // so nothing outside has to own an animation clock — and deliberately NOT
+  // routed through frameCbs, because it must land before anything measuring
+  // against the camera reads it in the same frame.
+  //
+  // player.js drives applyShot() itself for the whole of a flip, so this must be
+  // inert while a clip is playing or the two would fight for the camera every
+  // frame. It stops the moment a throw begins, which is exactly when framingTo
+  // is cleared.
+  let framingFrom = null;
+  let framingTo = null;
+  let framingT0 = 0;
+  function stepFraming(nowMs) {
+    if (!framingTo) return;
+    const k = HOLD_TRANSITION_MS > 0
+      ? clamp((nowMs - framingT0) / HOLD_TRANSITION_MS, 0, 1) : 1;
+    // smoothstep: a linear camera move starts and stops abruptly, and the eye
+    // reads the stop as the camera bumping into something.
+    const e = k * k * (3 - 2 * k);
+    applyShot(lerpShot(framingFrom, framingTo, e));
+    if (k >= 1) { framingFrom = null; framingTo = null; }
+  }
+  function framingToward(target, nowMs) {
+    framingFrom = { ...shot, target: shot.target.slice() };
+    framingTo = { ...target, target: target.target.slice() };
+    framingT0 = Number.isFinite(nowMs) ? nowMs : (typeof performance !== 'undefined' ? performance.now() : 0);
+  }
   const api = {
     THREE, renderer, scene, camera, coinRoot, coinModel, tableRoot, key,
     coinInfo, tableInfo: tableRoot.userData.measured,
@@ -499,6 +575,28 @@ export async function createScene(opts = {}) {
      * the coin was released and slerp into the clip's opening quaternion across
      * the lead-in, with nothing to undo first.
      */
+    /**
+     * Open the throwing space: transition the camera to HOLD_SHOT, dropping the
+     * table toward the bottom of frame. Call on pick-up.
+     *
+     * Returns the transition length in ms, which the host must ALSO pass to
+     * grab.js as `settleMs`. That pairing is the whole reason this returns a
+     * number instead of void: while the camera moves, the pixels-to-metres
+     * mapping moves with it, and a stroke measured across it would be measured
+     * against a moving ruler. grab.js tracks the pointer but measures nothing
+     * until this has elapsed.
+     */
+    enterHoldFraming(nowMs) { framingToward(HOLD_SHOT, nowMs); return HOLD_TRANSITION_MS; },
+    /** Back to the reading framing. Call on a drop, a cancel, or a re-arm. */
+    exitHoldFraming(nowMs) { framingToward(READY_SHOT, nowMs); return HOLD_TRANSITION_MS; },
+    /**
+     * Abandon any framing transition, leaving the camera where it is.
+     * playClip() drives applyShot() every frame for the whole of a flip, so the
+     * transition must let go before the throw starts or the two fight.
+     */
+    cancelFraming() { framingFrom = null; framingTo = null; },
+    get framingBusy() { return framingTo != null; },
+
     setHeldPose(worldY) {
       const y = clamp(worldY, LIFT.minY, LIFT.maxY);
       heldY = y;
@@ -580,6 +678,7 @@ export async function createScene(opts = {}) {
   let ticks = 0;
   function tick(now) {
     rafId = requestAnimationFrame(tick);
+    stepFraming(now);
     for (const cb of frameCbs) cb(now);
     ticks++;
     // GPU guard: this preview runs several page instances at once and the pane

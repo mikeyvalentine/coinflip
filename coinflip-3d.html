@@ -98,7 +98,7 @@ import { createMeterView } from './flip3d/charge.js';
 import { createGrab } from './flip3d/grab.js';
 import { createOrientArrow } from './flip3d/orientArrow.js';
 import { playDrop } from './flip3d/drop.js';
-import { LIFT, worldYToScreenY } from './flip3d/scene.js';
+import { LIFT, worldYToScreenY, HOLD_SHOT, HOLD_TRANSITION_MS } from './flip3d/scene.js';
 import { throwProfile, outcomeBand, POWER_NARROWS_BAND, MIN_POWER } from './flip3d/power.js';
 import { selectVariant, targetEnergy } from './flip3d/variant.js';
 
@@ -291,10 +291,14 @@ async function flip(power = 0.5, fromPose = null) {
 // control. Feeding the band in as clampY + travelPx makes one full lift and
 // slam exactly 1.0 everywhere, and stops a pointer dragged past the ceiling
 // banking wind-up the coin never visibly made.
+// Measured against HOLD_SHOT, not the live shot. The camera MOVES on pick-up
+// (it drops the table out of frame to make room for the throw), and a band read
+// off a moving camera is a ruler that changes length mid-gesture — the same
+// motion would score differently depending on when it happened.
 const liftBand = () => {
   const rect = canvas.getBoundingClientRect();
-  const top = worldYToScreenY(LIFT.maxY, rect);
-  const rest = worldYToScreenY(LIFT.minY, rect);
+  const top = worldYToScreenY(LIFT.maxY, rect, HOLD_SHOT);
+  const rest = worldYToScreenY(LIFT.minY, rect, HOLD_SHOT);
   return { top, rest, travel: Math.max(rest - top, 1) };
 };
 
@@ -308,7 +312,14 @@ const grab = createGrab(canvas, {
   // pointer the whole time, so a twitch on release would be a live throw — and
   // a throw spends the player's one flip for the day.
   minPower: 0.12,
-  onGrab: () => { canvas.classList.add('charging'); },
+  // The measurement is deaf for exactly as long as the camera is moving, so the
+  // throw is never scored against a ruler in motion. The coin still follows the
+  // pointer through it — a pick-up that ignored you for 180 ms would feel dead.
+  settleMs: HOLD_TRANSITION_MS,
+  onGrab: () => {
+    canvas.classList.add('charging');
+    scene.enterHoldFraming();          // drop the table away, open the throwing space
+  },
   onChange: (p, info) => {
     meter.set(p);
     // the coin IS the meter: it goes where the hand goes
@@ -320,6 +331,9 @@ const grab = createGrab(canvas, {
   onThrow: (p) => {
     canvas.classList.remove('charging');
     meter.reset();
+    // Let the framing transition go before playClip starts driving applyShot
+    // every frame, or the two fight over the camera.
+    scene.cancelFraming();
     // The pose the coin was let go from IS the lead-in's starting point.
     const fromPose = {
       pos: scene.coinRoot.position.toArray(),
@@ -333,6 +347,10 @@ const grab = createGrab(canvas, {
     meter.set(0);
     meter.flash(reason === 'below-minimum' ? 'dropped' : 'cancelled', '#9a9a9a');
     canvas.dataset.lastCancel = reason;
+    // playDrop deliberately never touches the camera — the coin never left the
+    // ready framing in its world. But it HAS now, so the camera has to be sent
+    // home explicitly or it stays parked over the empty throwing space.
+    scene.exitHoldFraming();
     // LET GO, not thrown — so the coin FALLS. Deliberately not flipper.ready(),
     // which animates it home: the coin is in the air and being released, and
     // snapping it back to the table is the one thing that cannot be what

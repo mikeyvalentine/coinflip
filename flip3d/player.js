@@ -489,7 +489,6 @@ export function createFlipper(sceneApi, hooks = {}) {
     const achievedExitSpeed = leadIn > 0
       ? (2 * bridgeDist) / ((leadIn / 1000) * movingFrac) : null;
     const readyShot = { ...READY_SHOT, target: READY_SHOT.target.slice() };
-    const settle = settleShot(analysis.finalPos);
     const wallDuration = leadIn + warp.totalWallMs;
 
     // put the coin where the flip starts before anything else moves
@@ -659,8 +658,18 @@ export function createFlipper(sceneApi, hooks = {}) {
         // is the plain follow shot this had before.
         const zoom = slowmoCfg ? smoothstep((ctNow - apexClipMs) / dramaSpan) : 0;
         const close = smoothstep((t - tdWall) / CAM_SETTLE_MS);
+        // TRACK THE COIN, do not crane to where it will END UP.
+        //
+        // This used to be settleShot(analysis.finalPos), computed once. The
+        // crane is a fixed 420 ms of WALL time, but the coin's journey from
+        // first contact to rest is CLIP time — and the slow-motion ramp now
+        // stretches that to well over a second. So the camera arrived at the
+        // resting place long before the coin did, framed empty table, and the
+        // coin skittered into shot afterwards. Following the live position
+        // cannot desynchronise: it converges on the resting place exactly when
+        // the coin does, whatever the time warp is doing.
         const base = lerpShot(readyShot, flightShot(pos, analysis.apexY, apexDist, zoom), pull);
-        sceneApi.applyShot(lerpShot(base, settle, close));
+        sceneApi.applyShot(lerpShot(base, settleShot(pos), close));
 
         if (t >= wallDuration + HOLD_AFTER_MS) {
           off(); off = null;

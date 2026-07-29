@@ -139,6 +139,22 @@ export const FOV_DEG = 30;
 export const MARKER_OFFSET_M = 0.003;
 
 /**
+ * Extra clearance in SCREEN PIXELS, added on top of the world offset.
+ *
+ * The world offset scales with the canvas — halve the window and it halves.
+ * The triangle and the label do NOT: they are drawn at a fixed 14 px and 13 px
+ * because a marker that shrinks with the window stops being readable. So on a
+ * small canvas a fixed-size graphic centred on a shrinking offset ends up
+ * sitting ON the coin, which is exactly what a 474 px-wide window showed:
+ * 13.3 px of clearance against a 14 px triangle.
+ *
+ * Verifying "the marker is outside the coin silhouette" in world or NDC terms
+ * is true and useless once the graphic has a pixel footprint of its own. This
+ * is that footprint, in the units it actually lives in.
+ */
+export const MARKER_CLEAR_PX = 16;
+
+/**
  * Yellow. A saturated amber-yellow rather than a pale one: the coin settles on
  * a lit wooden table under a saloon HDRI, and a pale yellow washes out against
  * it. This still reads as yellow and not as the meter's "hard" amber.
@@ -322,6 +338,21 @@ export function markerState(orientationDeg, o = {}) {
   // The coin centre too, so the view (and the verifier) can ask which way the
   // marker sits FROM the coin — the independent cross-check on the projection.
   const centreScreen = projectPoint(centre, shot, o.rect, o.fovDeg ?? FOV_DEG);
+  // Push outward along the SCREEN direction by a fixed pixel margin, so the
+  // clearance the player sees is the same at every canvas size. Done after
+  // projection on purpose: the required margin is a property of the graphic,
+  // not of the world, so converting it into metres would make it canvas-
+  // dependent again — the exact bug this exists to fix.
+  const clearPx = Number.isFinite(o.clearPx) ? o.clearPx : MARKER_CLEAR_PX;
+  if (screen.inFront && centreScreen.inFront && clearPx > 0) {
+    const dx = screen.x - centreScreen.x;
+    const dy = screen.y - centreScreen.y;
+    const len = Math.hypot(dx, dy);
+    if (len > 1e-6) {
+      screen.x += (dx / len) * clearPx;
+      screen.y += (dy / len) * clearPx;
+    }
+  }
   return { ...base, world, screen, centreScreen };
 }
 

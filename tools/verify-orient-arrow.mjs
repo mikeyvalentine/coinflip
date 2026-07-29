@@ -39,6 +39,7 @@ import {
   MARKER_OFFSET_M, FOV_DEG,
 } from '../flip3d/orientArrow.js';
 import { cameraBasis, screenYToWorldY } from '../flip3d/scene.js';
+import { SETTLE_CAM } from '../flip3d/player.js';
 import { COIN_RADIUS_M, COIN_HALF_THICKNESS_M } from '../flip3d/contract.js';
 
 /** The settle framing, exactly as player.js#SETTLE_CAM builds it. */
@@ -727,15 +728,64 @@ console.log('\n=== (17) reposition() survives a resize without changing the read
   const b = arrow.reposition({ rect: small });
   ok(b.orientationDeg === a.orientationDeg && b.label === a.label,
     'reposition() changed the reading', { a: a.label, b: b.label });
-  // half the canvas, so the point must land at half the coordinates
-  ok(Math.abs(b.screen.x - a.screen.x / 2) < 1e-6 && Math.abs(b.screen.y - a.screen.y / 2) < 1e-6,
-    'reposition() did not rescale with the canvas', { a: a.screen, b: b.screen });
+  // It is NO LONGER a clean halving, and that is the fix rather than a
+  // regression: the world offset scales with the canvas but the pixel clearance
+  // deliberately does not, because the triangle and label are a fixed size.
+  // What must hold is that the marker still sits on the coin's bearing and
+  // still clears the rim — so check the DIRECTION from the coin centre is
+  // preserved, not that the raw coordinates halved.
+  const ang = (s, c) => Math.atan2(s.y - c.y, s.x - c.x) * 180 / Math.PI;
+  const da = Math.abs(ang(a.screen, a.centreScreen) - ang(b.screen, b.centreScreen));
+  ok(da < 1e-6, 'reposition() moved the marker off its bearing', { da, a: a.screen, b: b.screen });
+  const ra = Math.hypot(a.screen.x - a.centreScreen.x, a.screen.y - a.centreScreen.y);
+  const rb = Math.hypot(b.screen.x - b.centreScreen.x, b.screen.y - b.centreScreen.y);
+  ok(rb < ra && rb > ra / 2,
+    'reposition() did not track the canvas at all, or scaled as if the margin were world-space',
+    { ra, rb });
   console.log(`  212.34 deg: (${a.screen.x.toFixed(1)}, ${a.screen.y.toFixed(1)}) at 880x550 `
     + `-> (${b.screen.x.toFixed(1)}, ${b.screen.y.toFixed(1)}) at 440x275, reading unchanged`);
 
   arrow.hide();
   ok(arrow.reposition() === null, 'reposition() after hide() resurrected a stale reading');
   console.log('  reposition() after hide() is inert — no stale marker comes back');
+}
+
+// ===========================================================================
+console.log('\n=== CLEARANCE IS IN PIXELS, NOT METRES ===');
+{
+  // The bug this pins: the marker offset is a world distance, so it SHRINKS
+  // with the canvas, while the triangle and label are drawn at a fixed pixel
+  // size. On a 474 px window that left 13.3 px of clearance under a 14 px
+  // triangle — the marker sat on the coin. Verifying "outside the silhouette"
+  // in world or NDC terms passed the whole time, because it is true and it is
+  // not the question. The question is whether the GRAPHIC clears the rim.
+  const shot = { target: [0, COIN_HALF_THICKNESS_M, 0], distance: SETTLE_CAM.distance,
+    elevDeg: SETTLE_CAM.elevDeg, azimuthDeg: 0 };
+  const MIN_CLEAR_PX = 18;   // the triangle is 14 px; this leaves real air
+  const rows = [];
+  let worstOverall = Infinity;
+  for (const w of [1400, 880, 640, 474, 360]) {
+    const rect = { left: 0, top: 0, width: w, height: Math.round(w / 1.6) };
+    let worst = Infinity; let at = 0;
+    for (let deg = 0; deg < 360; deg += 1) {
+      const st = markerState(deg, { shot, rect });
+      const d = compassToDir(deg);
+      const rim = projectPoint([d[0] * COIN_RADIUS_M, COIN_HALF_THICKNESS_M, d[2] * COIN_RADIUS_M], shot, rect);
+      const c = st.centreScreen;
+      const clear = Math.hypot(st.screen.x - c.x, st.screen.y - c.y)
+                  - Math.hypot(rim.x - c.x, rim.y - c.y);
+      if (clear < worst) { worst = clear; at = deg; }
+    }
+    worstOverall = Math.min(worstOverall, worst);
+    rows.push({ canvas: w + ' px', 'worst clearance': worst.toFixed(1) + ' px', 'at bearing': at + ' deg' });
+  }
+  console.table(rows);
+  ok(worstOverall >= MIN_CLEAR_PX,
+    'the marker graphic does not clear the coin rim at some canvas size',
+    { worstOverall: +worstOverall.toFixed(1), need: MIN_CLEAR_PX });
+  console.log(`  worst clearance anywhere, any canvas: ${worstOverall.toFixed(1)} px (floor ${MIN_CLEAR_PX})`);
+  console.log('  the world offset still scales; the pixel margin is what puts a FLOOR');
+  console.log('  under it, so shrinking the window can no longer put the marker on the coin.');
 }
 
 // ===========================================================================

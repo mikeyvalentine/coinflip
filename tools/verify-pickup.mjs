@@ -26,7 +26,7 @@
 // ---------------------------------------------------------------------------
 
 import {
-  READY_SHOT, LIFT, liftFraction, cameraBasis,
+  READY_SHOT, HOLD_SHOT, HOLD_TRANSITION_MS, LIFT, liftFraction, cameraBasis,
   screenYToWorldY, worldYToScreenY, shadowOffsetFor, KEY_LIGHT_POS, SHADOW_RADIUS,
 } from '../flip3d/scene.js';
 import { COIN_HALF_THICKNESS_M, COIN_RADIUS_M, COIN_DIAMETER_M } from '../flip3d/contract.js';
@@ -177,34 +177,70 @@ console.log('\n=== (5) the resting coin sits where the resting coin is ===');
 }
 
 // ===========================================================================
-console.log('\n=== (6) the lift ceiling keeps the whole coin in frame ===');
+console.log('\n=== (6) the HOLD framing keeps the coin in frame and opens the throw ===');
 {
-  // Where does the TOP EDGE of the view cross the lift line? Recomputed from
-  // the camera rather than taken from the comment in scene.js.
-  const b = cameraBasis(READY_SHOT);
-  const tanHalfV = Math.tan(FOV * Math.PI / 180 / 2);
-  const dy = b.yAxis[1] * tanHalfV - b.zAxis[1];
-  const dz = b.yAxis[2] * tanHalfV - b.zAxis[2];
-  const t = -b.pos[2] / dz;
-  const topEdgeY = b.pos[1] + t * dy;
-  console.log(`  the top edge of frame crosses the lift line at ${f4(topEdgeY)} m`);
+  // The ceiling is set by the framing the coin is LIFTED in — HOLD_SHOT — not
+  // by the reading framing. Recomputed from the camera rather than taken from
+  // the comment in scene.js.
+  const topEdgeOn = (shot) => {
+    const b = cameraBasis(shot);
+    const tanHalfV = Math.tan(FOV * Math.PI / 180 / 2);
+    const dy = b.yAxis[1] * tanHalfV - b.zAxis[1];
+    const dz = b.yAxis[2] * tanHalfV - b.zAxis[2];
+    return b.pos[1] + (-b.pos[2] / dz) * dy;
+  };
+  const topReady = topEdgeOn(READY_SHOT);
+  const topHold = topEdgeOn(HOLD_SHOT);
+  console.log(`  frame top on the lift line: READY ${f4(topReady)} m -> HOLD ${f4(topHold)} m`);
 
-  // The coin is a disc: at full lift its silhouette reaches up to a radius
-  // above centre in the worst case. Demand the whole disc clears the edge.
-  const headroom = topEdgeY - (LIFT.maxY + COIN_RADIUS_M);
-  ok(headroom > 0, 'the coin at full lift crosses the top of frame',
-    { topEdgeY: f4(topEdgeY), maxY: LIFT.maxY, radius: f4(COIN_RADIUS_M) });
+  // The coin is a disc: at full lift its silhouette reaches a radius above
+  // centre. Demand the whole disc clears the edge.
+  const headroom = topHold - (LIFT.maxY + COIN_RADIUS_M);
+  ok(headroom > 0, 'the coin at full lift crosses the top of the HOLD frame',
+    { topHold: f4(topHold), maxY: LIFT.maxY, radius: f4(COIN_RADIUS_M) });
   console.log(`  ceiling ${LIFT.maxY} m + coin radius ${f4(COIN_RADIUS_M)} m leaves ${(headroom * 1000).toFixed(1)} mm of headroom`);
 
-  // The stroke this affords, in pixels, on the default canvas. Reported rather
-  // than asserted tight: it is the number that has to line up with the power
-  // meter's travel, and Agent A owns that constant.
+  // THE POINT OF THE WHOLE CHANGE: how much room the throw actually gained.
   const rect = rectOf(550);
-  const pxRest = worldYToScreenY(LIFT.minY, rect, READY_SHOT, FOV);
-  const pxTop = worldYToScreenY(LIFT.maxY, rect, READY_SHOT, FOV);
-  const strokePx = pxRest - pxTop;
-  console.log(`  rest -> full lift is ${strokePx.toFixed(0)} px of pointer travel on an 880x550 canvas`);
-  ok(strokePx > 80 && strokePx < 400, 'the stroke is an unusable length', { strokePx: f4(strokePx) });
+  const strokeOn = (shot, maxY) =>
+    worldYToScreenY(LIFT.minY, rect, shot, FOV) - worldYToScreenY(maxY, rect, shot, FOV);
+  const OLD_MAX_Y = 0.032;            // the ceiling READY framing could afford
+  const before = strokeOn(READY_SHOT, OLD_MAX_Y);
+  const after = strokeOn(HOLD_SHOT, LIFT.maxY);
+  console.table([
+    { framing: 'READY (before)', 'ceiling m': OLD_MAX_Y, 'world mm': +((OLD_MAX_Y - LIFT.minY) * 1000).toFixed(1), 'stroke px': +before.toFixed(0) },
+    { framing: 'HOLD (now)', 'ceiling m': LIFT.maxY, 'world mm': +((LIFT.maxY - LIFT.minY) * 1000).toFixed(1), 'stroke px': +after.toFixed(0) },
+  ]);
+  ok(after > before * 1.6, 'the hold framing did not meaningfully open the throw',
+    { before: f4(before), after: f4(after) });
+  ok(after > 250 && after < 520, 'the stroke is an unusable length on the default canvas',
+    { strokePx: f4(after) });
+  console.log(`  the throw gained ${(after / before).toFixed(2)}x the screen and ${((LIFT.maxY - LIFT.minY) / (OLD_MAX_Y - LIFT.minY)).toFixed(2)}x the world`);
+
+  // The table has to actually get out of the way — that was the complaint.
+  const tableReady = rect.height - worldYToScreenY(0, rect, READY_SHOT, FOV);
+  const tableHold = rect.height - worldYToScreenY(0, rect, HOLD_SHOT, FOV);
+  ok(tableHold < tableReady, 'the table did not move down', { tableReady, tableHold });
+  console.log(`  table surface sits ${tableReady.toFixed(0)} px off the bottom at READY, ${tableHold.toFixed(0)} px at HOLD`);
+
+  // AZIMUTH 0 IS NOT NEGOTIABLE. Screen-up is -Z = NORTH and screen-right is
+  // +X = EAST, and the entire orientation readout rests on that mapping.
+  ok(HOLD_SHOT.azimuthDeg === 0, 'the hold framing broke azimuth 0 — the compass would rotate',
+    { azimuthDeg: HOLD_SHOT.azimuthDeg });
+  const bh = cameraBasis(HOLD_SHOT);
+  ok(Math.abs(bh.xAxis[0] - 1) < 1e-12 && Math.abs(bh.xAxis[2]) < 1e-12,
+    'the hold framing xAxis is not world +X', { xAxis: bh.xAxis.map(f4) });
+  console.log('  HOLD framing keeps azimuth 0 and xAxis = world +X');
+
+  // The lead-in still needs room to bridge from the release height up to the
+  // clip's 0.22 m opening. Raising the ceiling too far breaks that handoff and
+  // the clip visibly snatches the coin.
+  const BRIDGE_MIN_M = 0.0185;
+  const bridge = 0.22 - LIFT.maxY;
+  ok(bridge > BRIDGE_MIN_M, 'the lift ceiling leaves the lead-in no bridge',
+    { bridge: f4(bridge), need: BRIDGE_MIN_M });
+  console.log(`  bridge to the clip opening: ${(bridge * 1000).toFixed(1)} mm, need ${(BRIDGE_MIN_M * 1000).toFixed(1)} — ${(bridge / BRIDGE_MIN_M).toFixed(1)}x margin`);
+  console.log(`  hold transition ${HOLD_TRANSITION_MS} ms; grab.js must be given the same as settleMs`);
 }
 
 // ===========================================================================
