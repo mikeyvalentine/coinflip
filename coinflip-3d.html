@@ -62,11 +62,10 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="stage"><canvas id="c"></canvas><div id="meter"></div></div>
+  <div id="stage"><canvas id="c"></canvas><div id="meter"></div><div id="orient"></div></div>
   <div id="bar">
     <div id="shown"></div>
     <div id="spinCounter">spin: 0.0</div>
-    <div id="orient"></div>
     <button id="again" style="display:none">reset</button>
   </div>
   <div id="out"></div>
@@ -264,7 +263,13 @@ async function flip(power = 0.5, fromPose = null) {
     $('#out').innerHTML += ' — <b style="color:#c00">MISMATCH</b>';
     console.error('[flip3d] verification failed', report);
   }
-  orientArrow.show(p.landedOrientationDeg);
+  // Projected onto the coin's rim at its settled bearing, so the reading sits
+  // where the result is rather than in a caption underneath it. It needs the
+  // live camera and the live canvas rect: the shot decides the projection and
+  // the rect decides the pixels.
+  orientArrow.show(p.landedOrientationDeg, {
+    shot: scene.shot, rect: canvas.getBoundingClientRect(),
+  });
   console.log('[flip3d] flip', ++flipNo, report.pass ? 'OK' : 'FAILED', report);
   // DELIBERATELY NOT re-arming. The coin stays exactly where it landed, with
   // its orientation reading beside it, until the player asks for the next one.
@@ -359,6 +364,13 @@ const grab = createGrab(canvas, {
 // LOAD-BEARING: a motionless pointer emits no events, so this is the only thing
 // that can fire the idle re-arm. Without it the feature does not exist.
 scene.onFrame(() => grab.tick());
+
+// The coin no longer auto-resets, so a reading outlives a window resize far
+// more often than it used to — and a marker left at stale pixels reads as the
+// coin having moved.
+window.addEventListener('resize', () => {
+  orientArrow.reposition({ rect: canvas.getBoundingClientRect(), shot: scene.shot });
+});
 
 $('#again').addEventListener('click', async () => {
   $('#again').style.display = 'none';

@@ -35,8 +35,18 @@ import { fileURLToPath } from 'node:url';
 import {
   orientationToScreenAngle, screenAngleToOrientation, arrowState,
   createOrientArrow, SETTLE_ELEV_DEG, ARROW_COLOUR,
+  projectPoint, markerWorldPos, markerState, shotBasis,
+  MARKER_OFFSET_M, FOV_DEG,
 } from '../flip3d/orientArrow.js';
-import { cameraBasis } from '../flip3d/scene.js';
+import { cameraBasis, screenYToWorldY } from '../flip3d/scene.js';
+import { COIN_RADIUS_M, COIN_HALF_THICKNESS_M } from '../flip3d/contract.js';
+
+/** The settle framing, exactly as player.js#SETTLE_CAM builds it. */
+const SETTLE_SHOT = {
+  target: [0, COIN_HALF_THICKNESS_M, 0], distance: 0.105, elevDeg: 66, azimuthDeg: 0,
+};
+/** The canvas the scene actually resizes to: capped at 880 wide, 1.6 aspect. */
+const RECT = { left: 0, top: 0, width: 880, height: 550 };
 import {
   roundOrientation, quadrantFromOrientation, normDeg, compassToDir, QUADRANTS,
 } from '../flip3d/contract.js';
@@ -405,31 +415,39 @@ console.log('\n=== (9) the view writes its state where a hidden pane can be read
   ok(arrow.el.dataset.shown === undefined || arrow.el.dataset.shown === '0', 'the arrow starts shown');
   console.log('  starts hidden — it appears when the coin settles, not before');
 
-  const st = arrow.show(137.42);
+  const st = arrow.show(137.42, { shot: SETTLE_SHOT, rect: RECT });
   ok(arrow.el.style.display === 'inline-flex', 'show() did not reveal the arrow');
   ok(arrow.el.dataset.shown === '1', 'dataset.shown not set');
   ok(arrow.el.dataset.orientation === '137.42', 'dataset.orientation wrong', { v: arrow.el.dataset.orientation });
   ok(arrow.el.dataset.quadrant === 'E', 'dataset.quadrant wrong', { v: arrow.el.dataset.quadrant });
   ok(st.label === '137.42°', 'the label is wrong', { label: st.label });
 
-  // the SVG group must carry a rotate() matching the computed screen angle
+  // The glyph is an upside-down triangle and it does NOT rotate — the marker's
+  // position carries the bearing now. Assert the shape is apex-down: two points
+  // share the top edge and the third sits below both.
   const svg = arrow.el.children.find((c) => c.tagName === 'svg');
-  const g = svg.children[0];
-  const tf = g.getAttribute('transform');
-  const m = /rotate\(([-\d.]+) 50 50\)/.exec(tf || '');
-  ok(!!m, 'the arrow group carries no rotate()', { tf });
-  ok(m && Math.abs(parseFloat(m[1]) - st.screenAngleDeg) < 1e-3,
-    'the drawn rotation is not the computed screen angle', { tf, want: st.screenAngleDeg });
-  console.log(`  137.42 deg -> rotate(${m ? m[1] : '?'} 50 50), quadrant ${arrow.el.dataset.quadrant}`);
-
-  // colour: yellow, and the same yellow on the stroke and the label
-  const path = g.children[0];
-  ok(path.getAttribute('stroke') === ARROW_COLOUR, 'the arrow is not the declared yellow');
+  const tri = svg.children[0];
+  const d = tri.getAttribute('d') || '';
+  const pts = [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [parseFloat(m[1]), parseFloat(m[2])]);
+  ok(pts.length === 3, 'the glyph is not a triangle', { d, pts });
+  const ys = pts.map((p) => p[1]).sort((a, b) => a - b);
+  ok(ys[0] === ys[1] && ys[2] > ys[1], 'the triangle is not apex-DOWN', { ys });
+  ok(!/rotate/.test(d + (tri.getAttribute('transform') || '')), 'the triangle rotates', { d });
+  ok(tri.getAttribute('fill') === ARROW_COLOUR, 'the triangle is not the declared yellow');
   ok(arrow.el.style.color === ARROW_COLOUR, 'the label is not the declared yellow');
-  console.log(`  arrow and label both ${ARROW_COLOUR}`);
+  console.log(`  glyph is an apex-down triangle, unrotated, ${ARROW_COLOUR}`);
+
+  // it must be absolutely placed on the canvas, at the projected point
+  ok(arrow.el.style.position === 'absolute', 'the marker is not absolutely placed');
+  ok(arrow.el.dataset.placed === '1', 'the marker was not placed', { d: arrow.el.dataset });
+  const lx = parseFloat(arrow.el.style.left), ly = parseFloat(arrow.el.style.top);
+  ok(Math.abs(lx - (st.screen.x - arrow.size / 2)) < 1e-6
+    && Math.abs(ly - (st.screen.y - arrow.size / 2)) < 1e-6,
+  'the triangle is not centred on the projected point', { lx, ly, screen: st.screen });
+  console.log(`  137.42 deg -> placed at (${st.screen.x.toFixed(1)}, ${st.screen.y.toFixed(1)}), quadrant ${arrow.el.dataset.quadrant}`);
 
   // NOTHING may animate via CSS — a hidden pane would freeze it at frame zero
-  const styleText = JSON.stringify(arrow.el.style) + JSON.stringify(svg.style) + JSON.stringify(g.style || {});
+  const styleText = JSON.stringify(arrow.el.style) + JSON.stringify(svg.style);
   ok(!/transition|animation/i.test(styleText), 'the arrow animates via CSS', { styleText });
   console.log('  no CSS transition or animation anywhere on the element');
 
@@ -467,6 +485,257 @@ console.log('\n=== (10) it cannot reach the outcome ===');
     'orientArrow.js imports something other than contract.js', { imports });
   console.log(`  imports exactly ${JSON.stringify([...new Set(imports)])} — no draw, no library, no transform`);
   console.log(`  ${banned.length} banned identifiers, 0 present in code (comments may name them)`);
+}
+
+// ===========================================================================
+console.log('\n=== (11) THE PLACEMENT: cardinals land exactly up / right / down / left ===');
+{
+  const c = projectPoint(SETTLE_SHOT.target, SETTLE_SHOT, RECT);
+  ok(c.inFront && c.inViewport, 'the coin centre does not project into the viewport', { c });
+  const rows = [];
+  for (const [name, deg] of [['N', 0], ['E', 90], ['S', 180], ['W', 270]]) {
+    const st = markerState(deg, { shot: SETTLE_SHOT, rect: RECT });
+    const dx = st.screen.x - c.x, dy = st.screen.y - c.y;
+    rows.push({
+      bearing: name, deg,
+      'dx px': +dx.toFixed(2), 'dy px': +dy.toFixed(2),
+      'gap px': +Math.hypot(dx, dy).toFixed(1),
+    });
+    // North is straight UP the screen: no horizontal component at all, and a
+    // negative dy. Screen-up is -Z = North only because azimuth is pinned to 0;
+    // this is the assertion that catches the day someone unpins it.
+    if (name === 'N') { ok(Math.abs(dx) < 1e-9 && dy < 0, 'North is not straight up', { dx, dy }); }
+    if (name === 'S') { ok(Math.abs(dx) < 1e-9 && dy > 0, 'South is not straight down', { dx, dy }); }
+    if (name === 'E') { ok(Math.abs(dy) < 1e-9 && dx > 0, 'East is not straight right', { dx, dy }); }
+    if (name === 'W') { ok(Math.abs(dy) < 1e-9 && dx < 0, 'West is not straight left', { dx, dy }); }
+  }
+  console.table(rows);
+  const n = rows.find((r) => r.bearing === 'N'); const s = rows.find((r) => r.bearing === 'S');
+  ok(Math.abs(n['dy px']) < Math.abs(s['dy px']),
+    'North is not nearer the centre than South — perspective is missing', { n, s });
+  console.log(`  North sits ${Math.abs(n['dy px']).toFixed(1)} px from centre, South ${Math.abs(s['dy px']).toFixed(1)} px.`);
+  console.log('  Not a bug: the camera is due SOUTH, so the coin\'s north rim is further');
+  console.log('  away and projects smaller. An orthographic projection would tie.');
+}
+
+// ===========================================================================
+console.log('\n=== (12) the marker clears the coin and never covers it ===');
+{
+  // The coin's silhouette: radius COIN_RADIUS_M horizontally, squashed by
+  // sin(elev) vertically. The marker must sit OUTSIDE it at every bearing, or
+  // it is drawn on top of the face whose orientation it is reporting.
+  const c = projectPoint(SETTLE_SHOT.target, SETTLE_SHOT, RECT);
+  const rimAt = (deg) => {
+    const p = markerWorldPos(deg, SETTLE_SHOT.target, 0);       // ON the rim
+    const s = projectPoint(p, SETTLE_SHOT, RECT);
+    return Math.hypot(s.x - c.x, s.y - c.y);
+  };
+  let worstClear = Infinity, worstAt = null, inside = 0, minGap = Infinity;
+  for (let deg = 0; deg < 360; deg += 0.5) {
+    const st = markerState(deg, { shot: SETTLE_SHOT, rect: RECT });
+    const d = Math.hypot(st.screen.x - c.x, st.screen.y - c.y);
+    const rim = rimAt(deg);
+    const clear = d - rim;
+    if (d <= rim) inside++;
+    if (clear < worstClear) { worstClear = clear; worstAt = f2(deg); }
+    minGap = Math.min(minGap, d);
+  }
+  ok(inside === 0, 'the marker falls inside the coin silhouette somewhere', { inside });
+  ok(worstClear > 4, 'the marker crowds the rim', { worstClear, worstAt });
+  console.log(`  720 bearings: never inside the coin; tightest clearance ${worstClear.toFixed(1)} px at ${worstAt} deg`);
+  console.log(`  closest approach to the coin centre ${minGap.toFixed(1)} px (coin is ~${(COIN_RADIUS_M * 2 * 9.78 * 1000).toFixed(0)} px across)`);
+}
+
+// ===========================================================================
+console.log('\n=== (13) it stays on screen at every bearing, and on small canvases ===');
+{
+  // A marker that leaves the frame at some bearings is a bug you would only
+  // otherwise find by landing on that bearing by luck.
+  const rows = [];
+  for (const [w, h] of [[880, 550], [640, 400], [400, 250], [320, 200]]) {
+    const rect = { left: 0, top: 0, width: w, height: h };
+    let out = 0, worstMargin = Infinity, worstAt = null, labelOut = 0;
+    for (let deg = 0; deg < 360; deg += 0.5) {
+      const st = markerState(deg, { shot: SETTLE_SHOT, rect });
+      if (!st.screen.inViewport) { out++; continue; }
+      const m = Math.min(st.screen.x, w - st.screen.x, st.screen.y, h - st.screen.y);
+      if (m < worstMargin) { worstMargin = m; worstAt = f2(deg); }
+      // the label runs to the RIGHT of the triangle: 14 px glyph + 4 gap +
+      // ~52 px for "359.99°" at 13 px bold tabular figures
+      if (st.screen.x + 7 + 4 + 52 > w) labelOut++;
+    }
+    rows.push({
+      canvas: `${w}x${h}`, 'marker off-screen': out,
+      'tightest margin px': out ? '-' : +worstMargin.toFixed(1),
+      at: out ? '-' : worstAt, 'label clipped': labelOut,
+    });
+    ok(out === 0, 'the marker leaves the viewport', { canvas: `${w}x${h}`, out });
+  }
+  console.table(rows);
+  console.log('  label width is ESTIMATED (13 px bold tabular, "359.99°" ~= 52 px) — the');
+  console.log('  real metric needs a font engine, so a clipped label at 320 px is a');
+  console.log('  warning to check on a device, not a proof either way.');
+}
+
+// ===========================================================================
+console.log('\n=== (14) the placement and the rotation agree — two derivations, one answer ===');
+{
+  // orientationToScreenAngle() is a closed form from the camera basis.
+  // markerState() places a world point through a full perspective projection.
+  // They are independent routes to the same fact, so the DIRECTION from the coin
+  // centre to the marker must equal the screen angle. If either drifts, this
+  // goes red — which is the point of computing the same thing twice.
+  const c = projectPoint(SETTLE_SHOT.target, SETTLE_SHOT, RECT);
+  let worst = 0, worstAt = null;
+  for (let deg = 0; deg < 360; deg += 0.5) {
+    const st = markerState(deg, { shot: SETTLE_SHOT, rect: RECT });
+    const dx = st.screen.x - c.x, dy = st.screen.y - c.y;
+    // screen angle is clockwise from screen-up; screen y grows DOWNWARD
+    const fromPos = normDeg(Math.atan2(dx, -dy) * 180 / Math.PI);
+    const d = angDelta(fromPos, st.screenAngleDeg);
+    if (d > worst) { worst = d; worstAt = f2(deg); }
+  }
+  // I expected this to be small-but-nonzero — perspective is not orthographic,
+  // the near rim is 10% closer than the far one, so surely the projected
+  // direction drifts. It does not: measured 1.1e-13 deg, floating-point exact.
+  //
+  // The reason is specific and worth writing down, because it is also the
+  // reason this can STOP being true. The shot TARGETS the coin centre, so the
+  // centre lands exactly on the view axis and projects to the NDC origin. The
+  // marker is at C + r*d, so in camera space it is (0,0,-distance) + r*u, and
+  // its NDC works out to r*(u.x, u.y) / (distance - r*u.z) — the depth appears
+  // only as a SCALAR on the displacement. A scalar changes the marker's
+  // distance from the centre, never its bearing.
+  //
+  // So: exact while the camera looks at the coin. Point it somewhere else, or
+  // pass a `centre` that is not the shot target, and the two derivations WILL
+  // separate. The tight bound below is the tripwire for that day.
+  ok(worst < 1e-9, 'the projected direction disagrees with the closed form', { worst, worstAt });
+  console.log(`  worst disagreement ${worst.toExponential(2)} deg at ${worstAt} deg bearing`);
+  console.log('  Exact, because the shot targets the coin centre: the centre lands on the');
+  console.log('  NDC origin, so the perspective divide scales the marker\'s displacement');
+  console.log('  without rotating it. Depths still differ by 10% (0.0996 m vs 0.1104 m).');
+
+  // and it must genuinely separate when the camera is NOT on the coin, or the
+  // assertion above is proving a tautology rather than a projection
+  const offShot = { ...SETTLE_SHOT, target: [0.02, COIN_HALF_THICKNESS_M, 0.015] };
+  const offC = projectPoint([0, COIN_HALF_THICKNESS_M, 0], offShot, RECT);
+  let offWorst = 0;
+  for (let deg = 0; deg < 360; deg += 1) {
+    const st = markerState(deg, { shot: offShot, rect: RECT, centre: [0, COIN_HALF_THICKNESS_M, 0] });
+    const fromPos = normDeg(Math.atan2(st.screen.x - offC.x, -(st.screen.y - offC.y)) * 180 / Math.PI);
+    offWorst = Math.max(offWorst, angDelta(fromPos, st.screenAngleDeg));
+  }
+  ok(offWorst > 0.01, 'an off-axis camera does not separate the two derivations — '
+    + 'the agreement above may be tautological', { offWorst });
+  console.log(`  with the camera aimed 25 mm off the coin they separate by ${offWorst.toFixed(2)} deg,`);
+  console.log('  which is what shows the exactness above is a real property and not a no-op');
+}
+
+// ===========================================================================
+console.log('\n=== (15) it agrees with scene.js, the shared camera, on a real point ===');
+{
+  // scene.js#screenYToWorldY unprojects a screen row onto the lift line (x=0,
+  // z=0). Project a point ON that line and the two must be inverses. This is
+  // what stops the local shotBasis copy drifting from the renderer's camera.
+  let worst = 0, worstAt = null;
+  for (const y of [0.001, 0.005, 0.012, 0.02, 0.03]) {
+    const p = [0, y, 0];
+    const s = projectPoint(p, SETTLE_SHOT, RECT, FOV_DEG);
+    const back = screenYToWorldY(s.y, RECT, SETTLE_SHOT, FOV_DEG);
+    const d = Math.abs(back - y);
+    if (d > worst) { worst = d; worstAt = y; }
+  }
+  // scene.js clamps its result to the LIFT band, so only heights inside it can
+  // round-trip; that is a property of its clamp, not of the projection.
+  ok(worst < 1e-6, 'projectPoint and scene.js#screenYToWorldY are not inverses',
+    { worstMm: worst * 1000, worstAt });
+  console.log(`  worst round-trip against scene.js ${(worst * 1e6).toFixed(3)} microns`);
+
+  // and the local basis must equal the shared one exactly
+  let bWorst = 0;
+  for (const e of [10, 34, 66, 80]) {
+    for (const a of [0, 45, -60]) {
+      const shot = { target: [0, 0.001, 0], distance: 0.1, elevDeg: e, azimuthDeg: a };
+      const mine = shotBasis(shot); const theirs = cameraBasis(shot);
+      for (const k of ['pos', 'xAxis', 'yAxis', 'zAxis']) {
+        for (let i = 0; i < 3; i++) bWorst = Math.max(bWorst, Math.abs(mine[k][i] - theirs[k][i]));
+      }
+    }
+  }
+  ok(bWorst < 1e-12, 'the local shotBasis has drifted from scene.js#cameraBasis', { bWorst });
+  console.log(`  local shotBasis == scene.js#cameraBasis to ${bWorst.toExponential(2)}`);
+}
+
+// ===========================================================================
+console.log('\n=== (16) degenerate placement input is total ===');
+{
+  const rows = [];
+  let bad = 0;
+  const cases = [
+    ['NaN degrees', NaN, SETTLE_SHOT, RECT],
+    ['Infinity degrees', Infinity, SETTLE_SHOT, RECT],
+    ['negative degrees', -720.5, SETTLE_SHOT, RECT],
+    ['over 360', 1080.25, SETTLE_SHOT, RECT],
+    ['no shot', 45, null, RECT],
+    ['no rect', 45, SETTLE_SHOT, null],
+    ['zero-size rect', 45, SETTLE_SHOT, { left: 0, top: 0, width: 0, height: 0 }],
+    ['negative rect', 45, SETTLE_SHOT, { left: 0, top: 0, width: -880, height: -550 }],
+    ['zero distance', 45, { ...SETTLE_SHOT, distance: 0 }, RECT],
+    ['elev 90 (top-down)', 45, { ...SETTLE_SHOT, elevDeg: 90 }, RECT],
+    ['elev 0 (edge-on)', 45, { ...SETTLE_SHOT, elevDeg: 0 }, RECT],
+  ];
+  for (const [name, deg, shot, rect] of cases) {
+    let threw = false; let st = null;
+    try { st = markerState(deg, { shot, rect }); } catch { threw = true; }
+    const placed = st && st.screen && st.screen.inFront;
+    const finite = !placed || (Number.isFinite(st.screen.x) && Number.isFinite(st.screen.y));
+    if (threw || !finite) bad++;
+    rows.push({
+      case: name, threw, placed: !!placed,
+      x: placed ? +st.screen.x.toFixed(1) : '-', y: placed ? +st.screen.y.toFixed(1) : '-',
+      ok: !threw && finite,
+    });
+  }
+  console.table(rows);
+  ok(bad === 0, 'a degenerate placement threw or produced a non-finite position', { bad });
+  console.log('  nothing throws; anything unplaceable reports inFront:false rather than');
+  console.log('  parking the marker at 0,0 where it would look like a real reading');
+
+  // a point BEHIND the camera must be refused, not mirrored onto the screen
+  const behind = projectPoint([0, 0.001, 1], SETTLE_SHOT, RECT);
+  ok(!behind.inFront, 'a point behind the camera was projected anyway', { behind });
+  console.log('  a point behind the camera reports inFront:false');
+}
+
+// ===========================================================================
+console.log('\n=== (17) reposition() survives a resize without changing the reading ===');
+{
+  const doc = { createElement: (t) => mk2(t), createElementNS: (n, t) => mk2(t) };
+  function mk2(tag) {
+    return {
+      tagName: tag, style: {}, dataset: {}, children: [], attrs: {},
+      ownerDocument: doc, className: '', textContent: '',
+      setAttribute(k, v) { this.attrs[k] = v; },
+      getAttribute(k) { return this.attrs[k]; },
+      appendChild(c) { this.children.push(c); return c; },
+    };
+  }
+  const arrow = createOrientArrow(mk2('div'), {});
+  const a = arrow.show(212.34, { shot: SETTLE_SHOT, rect: RECT });
+  const small = { left: 0, top: 0, width: 440, height: 275 };
+  const b = arrow.reposition({ rect: small });
+  ok(b.orientationDeg === a.orientationDeg && b.label === a.label,
+    'reposition() changed the reading', { a: a.label, b: b.label });
+  // half the canvas, so the point must land at half the coordinates
+  ok(Math.abs(b.screen.x - a.screen.x / 2) < 1e-6 && Math.abs(b.screen.y - a.screen.y / 2) < 1e-6,
+    'reposition() did not rescale with the canvas', { a: a.screen, b: b.screen });
+  console.log(`  212.34 deg: (${a.screen.x.toFixed(1)}, ${a.screen.y.toFixed(1)}) at 880x550 `
+    + `-> (${b.screen.x.toFixed(1)}, ${b.screen.y.toFixed(1)}) at 440x275, reading unchanged`);
+
+  arrow.hide();
+  ok(arrow.reposition() === null, 'reposition() after hide() resurrected a stale reading');
+  console.log('  reposition() after hide() is inert — no stale marker comes back');
 }
 
 // ===========================================================================
