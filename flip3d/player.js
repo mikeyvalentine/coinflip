@@ -127,13 +127,18 @@ function quatAngleDeg(a, b) {
 // camera ~1.5 m back, which makes a 20.5 mm coin a dozen pixels. Following it
 // keeps the coin large and lets the table and the HDRI carry the motion.
 export const FLIGHT_CAM = {
-  distanceNear: 0.26,   // at the table
-  distanceApex: 0.40,   // at the top of the arc
+  distanceNear: 0.1682,  // at the table   (0.26 at the old 30 deg lens)
+  distanceApex: 0.2588,  // at the top of the arc (0.40 at 30 deg)
   elevDeg: 20,
   travelLead: 0.85,     // <1 lets the coin drift across frame as it travels
   headroom: 0.018,      // target sits above the coin, so it rides low in frame
 };
-export const SETTLE_CAM = { distance: 0.105, elevDeg: 66 };
+// Re-solved for the 45 deg lens (scene.js#SCENE_FOV_DEG). These were tuned at
+// 30 deg; a wider lens at the same distance just makes the coin smaller, which
+// is not what wide angle means. Scaled by tan(15)/tan(22.5) = 0.6469 so the
+// subject holds its size and the WIDTH is what changes — a wider lens with a
+// closer camera is what produces exaggerated depth rather than a shrunken coin.
+export const SETTLE_CAM = { distance: 0.0679, elevDeg: 66 };
 
 // --- the apex push-in ------------------------------------------------------
 // The zoom half of §6.4. It runs over the SAME window as the slow-down below —

@@ -1,37 +1,86 @@
 // flip3d/orientArrow.js
 // ---------------------------------------------------------------------------
-// THE ORIENTATION HELPER — a small yellow marker that appears when the coin has
-// settled, sitting ON THE COIN at the bearing its design's 12 o'clock ended up
-// pointing, with the angle to two decimals beside it. It is the visual answer
-// to "did my orientation bet land?", and nothing more than that.
+// THE ORIENTATION DIAL — when the coin settles, a mostly-transparent compass
+// dial is painted ONTO its face: four quadrant sectors, the one the coin landed
+// in filled brighter, and an arrow on the rim marking where the design's
+// 12 o'clock actually ended up pointing.
 //
-// IT LIVES IN THE SCENE, NOT IN A READOUT BAR. The first version put the arrow
-// in the status row under the canvas, which made the player do the work: read a
-// number, picture a compass, map it onto a coin lying at an angle. Now the
-// marker is projected onto the coin's own rim at the settled bearing, so the
-// answer is where the question is.
+// It is the visual answer to "did my orientation bet land?", and nothing more.
 //
-// IT IS A READOUT. It reads a landed orientation and draws it. It imports
-// nothing from the draw (no outcome.js, no library.js), touches no transform,
-// and cannot change what landed. The angle it shows is the SAME quantity
-// player.js reports as report.played.landedOrientationDeg — both go through
-// contract.js#roundOrientation, so the two cannot disagree.
+// WHAT THIS REPLACED, AND WHY. First it was a yellow arrow in the status row
+// under the canvas, which made the player do the work: read a number, picture a
+// compass, map it onto a coin lying at an angle. Then it was an arrow projected
+// onto the coin's rim with the angle beside it — better, but a flat screen-space
+// glyph on a coin the camera is clearly seeing at a slant reads as a sticker on
+// the glass. Now the whole dial is drawn IN THE COIN'S OWN PLANE, so it is
+// foreshortened exactly as the coin is and registers with its rim.
+//
+// THE NUMBER IS GONE. `338.90°` was precision nobody bets on: the wager is which
+// QUADRANT the 12 o'clock fell in, and a filled sector says that instantly where
+// a two-decimal number needed decoding. The reading is still carried in the
+// state object and in the dataset for tests and telemetry — it just is not
+// something the player has to parse.
+//
+// ===========================================================================
+// THE QUADRANTS ARE FIXED COMPASS BUCKETS. THEY DO NOT ROTATE WITH THE COIN.
+// ===========================================================================
+// contract.js: `quadrantFromOrientation(deg) = QUADRANTS[floor(deg / 90)]`, with
+// orientationDeg measured CLOCKWISE FROM NORTH. So bucket k spans bearings
+// [90k, 90k+90) and is nailed to the world, not to the coin. The coin's 12
+// o'clock lands somewhere in one of them; that bucket is the bet. Drawing the
+// sectors rotated with the coin would be drawing a different game.
+//
+// The buckets are NE / SE / SW / NW, because [0,90) runs FROM north TO east and
+// is therefore the north-east sector — the top-right quarter, not the top. The
+// bare cardinals N/E/S/W are reserved for exact 90-degree multiples, which have
+// essentially zero probability; if one is ever rendered, something genuinely
+// remarkable happened rather than "roughly northish".
+//
+// THE NAMES ARE NEVER SPELLED OUT HERE. Everything below indexes by
+// floor(deg/90) and takes the name from contract.js, so a rename there cannot
+// leave this file drawing one thing and labelling another.
+// ===========================================================================
+//
+// IT IS A READOUT. It imports nothing from the draw (no outcome.js, no
+// library.js), touches no transform, and cannot change what landed. The angle it
+// shows is the SAME quantity player.js reports as
+// report.played.landedOrientationDeg — both go through contract.js's
+// roundOrientation, so the two cannot disagree.
 //
 // COLOUR IS NOT A RESULT. Yellow means "here is the truth", not "you won". The
 // staged reveal owns win/loss colour (green/red, purple for an Edge), and a
 // helper that also coloured itself would be a second, competing verdict on
-// screen at the same moment. So the arrow is yellow whatever happened.
+// screen at the same moment.
 //
 // ===========================================================================
-// THE FORESHORTENING, which is the whole reason this file is not two lines
+// REGISTRATION: WHY A HOMOGRAPHY AND NOT A JACOBIAN
 // ===========================================================================
-// The settle camera is elevDeg 66, NOT top-down, so the table plane is seen at
-// a slant and a screen-space arrow rotated naively by `orientationDeg` is wrong
-// everywhere except the four cardinals.
+// The table plane maps to the screen under a projective transform. That map is
+// EXACTLY a homography — a plane-to-plane projective map is what a pinhole
+// camera does to a plane, by definition — so it can be reproduced exactly from
+// four point correspondences and CSS `matrix3d`, which carries the perspective
+// divide in its fourth column.
 //
-// Derivation, for camera azimuth `a` and elevation `e` (scene.js#cameraBasis
-// builds exactly this basis, and the sweep in tools/verify-orient-arrow.mjs
-// asserts the closed form below agrees with it):
+// The obvious cheaper move is the local Jacobian: sample the projection at P,
+// P+eps*east, P+eps*north and use the two screen vectors as an affine matrix.
+// That is a LINEARISATION about the centre, and it was fine when this file drew
+// a 14 px triangle. It is not fine now: the overlay spans the coin's whole
+// diameter, so the perspective divide varies measurably across it, and the error
+// shows up exactly where it is most visible — the rim failing to sit on the
+// coin's rim. tools/verify-orient-arrow.mjs measures both and reports the affine
+// error in pixels; the homography's residual is float noise by construction.
+//
+// The four correspondences are the corners of the dial's own box, pushed through
+// projectPoint(). Solving for the 8 unknowns is a small dense linear system, so
+// this costs nothing and is exact rather than nearly right.
+// ===========================================================================
+//
+// ===========================================================================
+// THE FORESHORTENING, kept because the closed form is still the cheapest
+// correct answer for a BEARING (as opposed to a position)
+// ===========================================================================
+// For camera azimuth `a` and elevation `e` (scene.js#cameraBasis builds exactly
+// this basis, and the sweep in the verifier asserts the closed form agrees):
 //
 //   a world heading th, clockwise from North, is the direction
 //       d = (sin th, 0, -cos th)                     [contract.js#compassToDir]
@@ -42,72 +91,22 @@
 //       right = d . xAxis = sin(th + a)
 //       up    = d . yAxis = sin(e) * cos(th + a)
 //
-// Two things fall out of that, and both are worth stating because both are
-// easy to get subtly wrong:
-//
 //   * AZIMUTH JUST ADDS TO THE HEADING. It rotates the whole compass rigidly.
 //   * ELEVATION SQUASHES THE NORTH-SOUTH COMPONENT BY sin(e), and only that
-//     component. At e = 90 (top-down) sin(e) = 1 and the map is the identity;
-//     at e = 0 the table is edge-on, sin(e) = 0, and every heading collapses
-//     onto the horizontal — which is geometrically right, not a bug.
+//     component. At e = 90 (top-down) the map is the identity; at e = 0 the
+//     table is edge-on and every heading collapses onto the horizontal — which
+//     is geometrically right, not a bug.
 //
-// So the screen angle, measured CLOCKWISE FROM SCREEN-UP exactly as the world
-// angle is measured clockwise from North, is
+// so the screen angle, clockwise from screen-up, is
 //       atan2( sin(th + a), sin(e) * cos(th + a) )
 //
-// WHY THE CLOSED FORM AND NOT cameraBasis() DIRECTLY. cameraBasis is the shared
-// source of truth for the camera and calling it is the obvious move. It also
-// works: tools/verify-orient-arrow.mjs section (6) puts the two side by side at
-// every elevation from 1 to 90 and four azimuths, and they agree to 1e-12.
-//
-// The reason to keep the closed form anyway is narrower than it first looks,
-// and worth stating accurately because the first version of this comment
-// claimed something false. cameraBasis does NOT go singular at elevDeg 90 —
-// it survives, but only because Math.cos(Math.PI/2) evaluates to 6.1e-17
-// rather than to 0, so the cross product that builds xAxis has a length of
-// 6.1e-17 and normalising it recovers exactly [1,0,0]. That is floating-point
-// luck standing in for a guarantee: the function guards a zero-length basis
-// with `|| 1`, and any input that made cos(e) round to a true zero would hand
-// back a zero basis and turn every heading into 0 deg silently.
-//
-// Top-down is precisely where this function's right answer is most obvious —
-// the identity — so it is the worst possible place to depend on luck. The
-// closed form is exact there by construction, needs no basis at all, and puts
-// the sin(e) squash (the entire physical content of this file) in plain sight
-// in one line. The section (6) sweep is what stops it drifting from the camera
-// the renderer actually uses.
-// ===========================================================================
-
-// ===========================================================================
-// THE PLACEMENT, which is the other half of the maths
-// ===========================================================================
-// The marker sits on the table plane at the coin's settled bearing, pushed a
-// little past the rim, and is then projected into screen space like any other
-// world point:
-//
-//   world point  P = centre + compassToDir(orientation) * (COIN_RADIUS + OFFSET)
-//   camera-space  x = (P - pos).xAxis,  y = (P - pos).yAxis,  z = (P - pos).zAxis
-//   depth = -z            (zAxis points BACKWARDS in THREE's convention)
-//   ndcY  = (y / depth) / tan(fov/2)
-//   ndcX  = (x / depth) / (tan(fov/2) * aspect)
-//
-// That is the exact inverse of scene.js#screenYToWorldY, which unprojects with
-// `ray = yAxis*s - zAxis` where `s = ndcY * tan(fov/2)` — so the two agree by
-// construction rather than by coincidence, and section (11) of the verifier
-// checks the round trip rather than trusting this comment.
-//
-// WHY A DOM OVERLAY AND NOT A three.js OBJECT. A sprite or textured mesh would
-// live in the render loop for free and would get real occlusion from the coin.
-// Rejected on three counts, in order of weight:
-//   * the label is a two-decimal number at ~13 px, and canvas-texture text at
-//     that size is mush unless you carry a high-resolution atlas around;
-//   * the marker is a UI affordance, not an object — it must hold a constant
-//     screen size as the camera moves, which in-scene means fighting the
-//     perspective divide every frame to undo it;
-//   * occlusion is a MISFEATURE here. The one thing this element must always be
-//     is readable, and a scene object would let the coin hide it.
-// Keeping it in the DOM also keeps this file importing nothing but contract.js,
-// so it stays a readout that structurally cannot touch a transform.
+// WHY NOT cameraBasis() DIRECTLY. It works — the verifier puts the two side by
+// side at every elevation and they agree to 1e-12. The reason to keep the closed
+// form is narrower than it looks: cameraBasis does NOT go singular at elevDeg 90
+// but only survives because Math.cos(Math.PI/2) evaluates to 6.1e-17 rather than
+// 0, so normalising a 6.1e-17-length cross product recovers [1,0,0] by
+// floating-point luck. Top-down is where this function's answer is most obvious
+// (the identity), so it is the worst place to depend on luck.
 // ===========================================================================
 
 import {
@@ -121,59 +120,58 @@ const RAD = 180 / Math.PI;
 /** The settle framing this helper is drawn under. Mirrors player.js#SETTLE_CAM. */
 export const SETTLE_ELEV_DEG = 66;
 
-/** The scene's vertical field of view. Mirrors scene.js's PerspectiveCamera. */
-export const FOV_DEG = 30;
-
 /**
- * How far past the rim the marker sits, in metres.
+ * The scene's vertical field of view. Mirrors scene.js#SCENE_FOV_DEG.
  *
- * 3 mm on a coin of radius 10.25 mm — 29% of the radius. Chosen in SCREEN terms,
- * because that is where it either works or does not: the settle camera is 105 mm
- * away with a 30 deg vertical FOV, which on an 880x550 canvas is ~9.8 px/mm. So
- * the coin is ~200 px across and the marker clears its rim by ~29 px — wide
- * enough that the rim highlight and the antialiasing cannot touch it, tight
- * enough that it still reads as attached to the coin rather than floating in the
- * scene beside it. It is a metre offset and not a pixel one on purpose: it has
- * to stay glued to the rim when the canvas resizes.
+ * Duplicated rather than imported, and that is deliberate: scene.js pulls in
+ * three, the GLTF loader and the HDR loader, and importing it here would drag
+ * the whole renderer into a file whose job is to draw a dial — and would break
+ * this module's one structural guarantee, that it imports nothing but
+ * contract.js and so cannot reach a transform. Section (6) of the verifier pins
+ * the two together so the copy cannot drift.
  */
-export const MARKER_OFFSET_M = 0.003;
+export const FOV_DEG = 45;
 
 /**
- * Extra clearance in SCREEN PIXELS, added on top of the world offset.
+ * How far past the rim the 12-o'clock arrow's tip sits, in metres.
  *
- * The world offset scales with the canvas — halve the window and it halves.
- * The triangle and the label do NOT: they are drawn at a fixed 14 px and 13 px
- * because a marker that shrinks with the window stops being readable. So on a
- * small canvas a fixed-size graphic centred on a shrinking offset ends up
- * sitting ON the coin, which is exactly what a 474 px-wide window showed:
- * 13.3 px of clearance against a 14 px triangle.
- *
- * Verifying "the marker is outside the coin silhouette" in world or NDC terms
- * is true and useless once the graphic has a pixel footprint of its own. This
- * is that footprint, in the units it actually lives in.
+ * Small on purpose. The arrow is a tick on the rim now, not a floating marker —
+ * it says "the design's 12 o'clock points HERE" and the sector fill says which
+ * bucket that is. It no longer has to hold itself clear of the coin, because it
+ * is meant to be touching it.
  */
-export const MARKER_CLEAR_PX = 16;
+export const MARKER_OFFSET_M = 0.0016;
 
 /**
- * Yellow. A saturated amber-yellow rather than a pale one: the coin settles on
- * a lit wooden table under a saloon HDRI, and a pale yellow washes out against
- * it. This still reads as yellow and not as the meter's "hard" amber.
+ * Yellow. A saturated amber-yellow rather than a pale one: the coin settles on a
+ * lit wooden table under a saloon HDRI, and a pale yellow washes out against it.
  */
 export const ARROW_COLOUR = '#ffc300';
+
+/**
+ * Sector fills, as alpha.
+ *
+ * Low enough that the coin's face reads straight through — the ruble's engraving
+ * is the thing being pointed at, and an overlay that hides it defeats itself.
+ * The landed sector is roughly three times the others, which is the whole signal:
+ * "this one" has to be readable at a glance without any legend.
+ */
+export const SECTOR_ALPHA = { idle: 0.10, landed: 0.32 };
 
 /**
  * A world heading -> its on-screen rotation, in degrees clockwise from
  * screen-up. PURE. See the derivation in the header.
  *
- * @param {number} orientationDeg clockwise from North, any real number
- * @param {number} [elevDeg] camera elevation; defaults to the settle framing
- * @param {number} [azimuthDeg] camera azimuth; 0 for every shot in the game
- * @returns {number} degrees in [0, 360). Never NaN.
+ * Not used to draw anything now that the dial lives in plane coordinates — the
+ * homography carries the bearing for free. Kept because it is the cheapest
+ * correct answer to "which way does this bearing point on screen", it is the
+ * one piece of this file that is exact at every elevation including top-down,
+ * and the verifier's cardinal and foreshortening sections are written against
+ * it.
  */
 export function orientationToScreenAngle(orientationDeg, elevDeg = SETTLE_ELEV_DEG, azimuthDeg = 0) {
   // Non-finite input is a broken caller, not a heading. Falling back to North
-  // keeps this total: it feeds an SVG transform, and one NaN there silently
-  // blanks the whole element rather than failing loudly.
+  // keeps this total: one NaN in an SVG transform silently blanks the element.
   const th = Number.isFinite(orientationDeg) ? normDeg(orientationDeg) : 0;
   const e = Number.isFinite(elevDeg) ? elevDeg : SETTLE_ELEV_DEG;
   const a = Number.isFinite(azimuthDeg) ? azimuthDeg : 0;
@@ -185,12 +183,11 @@ export function orientationToScreenAngle(orientationDeg, elevDeg = SETTLE_ELEV_D
  * The inverse: an on-screen rotation back to the world heading it represents.
  *
  * Exists for the round-trip assertion. A projection only ever exercised in one
- * direction is one whose errors cancel invisibly — the same reason
- * scene.js#worldYToScreenY exists next to screenYToWorldY.
+ * direction is one whose errors cancel invisibly.
  *
  * Undefined at elevDeg 0, where the projection is genuinely many-to-one (the
- * table is edge-on and every heading lands on the same horizontal line), so
- * that case returns NaN rather than inventing an answer.
+ * table is edge-on and every heading lands on the same horizontal line), so that
+ * case returns NaN rather than inventing an answer.
  */
 export function screenAngleToOrientation(screenDeg, elevDeg = SETTLE_ELEV_DEG, azimuthDeg = 0) {
   const s = Math.sin((Number.isFinite(elevDeg) ? elevDeg : SETTLE_ELEV_DEG) * DEG);
@@ -201,15 +198,8 @@ export function screenAngleToOrientation(screenDeg, elevDeg = SETTLE_ELEV_DEG, a
 }
 
 /**
- * The camera's world basis for a shot.
- *
- * A local copy of scene.js#cameraBasis, deliberately. scene.js pulls in three,
- * the GLTF and HDR loaders and the whole renderer; importing it here would drag
- * all of that into a file whose entire job is to draw a triangle, and would
- * break this module's one structural guarantee — that it imports nothing but
- * contract.js and so cannot reach a transform. Section (6) of the verifier
- * pins the two implementations together at every elevation and azimuth, which
- * is what stops the copy drifting.
+ * The camera's world basis for a shot. A local copy of scene.js#cameraBasis —
+ * see the FOV_DEG note for why it is copied rather than imported.
  *
  * THREE's convention: `zAxis` points BACKWARDS, from target toward camera.
  */
@@ -239,15 +229,10 @@ export function shotBasis(shot) {
 /**
  * A world point -> where it lands on the canvas, in CSS px.
  *
- * @param {number[]} p world point
- * @param {object} shot {target, distance, elevDeg, azimuthDeg}
- * @param {{left?:number,top?:number,width:number,height:number}} rect canvas box
- * @param {number} [fovDeg] vertical field of view
- * @returns {{x:number,y:number,ndcX:number,ndcY:number,depth:number,
- *            inFront:boolean,inViewport:boolean}}
- *   Always finite. A point behind the camera reports inFront:false rather than
- *   a mirrored position — projecting it anyway is how markers appear on the
- *   wrong side of the screen and nobody can work out why.
+ * @returns {{x,y,ndcX,ndcY,depth,inFront,inViewport}}
+ *   Always finite. A point behind the camera reports inFront:false rather than a
+ *   mirrored position — projecting it anyway is how markers appear on the wrong
+ *   side of the screen and nobody can work out why.
  */
 export function projectPoint(p, shot, rect, fovDeg = FOV_DEG) {
   const bad = { x: NaN, y: NaN, ndcX: NaN, ndcY: NaN, depth: 0, inFront: false, inViewport: false };
@@ -274,13 +259,12 @@ export function projectPoint(p, shot, rect, fovDeg = FOV_DEG) {
 }
 
 /**
- * Where the marker sits in the world: on the table plane, at the settled
- * bearing, pushed `offsetM` past the rim.
+ * Where the 12-o'clock arrow's tip sits in the world: on the table plane, at the
+ * settled bearing, a whisker past the rim.
  *
  * The height is the coin's own centre height rather than the table surface, so
- * the marker sits level with the rim it is pointing at instead of sinking into
- * the wood — 0.75 mm, which is invisible at this framing but costs nothing to
- * be right about.
+ * the dial sits level with the face it is painted on instead of sinking into the
+ * wood — 0.75 mm, invisible at this framing but free to be right about.
  */
 export function markerWorldPos(orientationDeg, centre = [0, COIN_HALF_THICKNESS_M, 0],
   offsetM = MARKER_OFFSET_M) {
@@ -293,185 +277,321 @@ export function markerWorldPos(orientationDeg, centre = [0, COIN_HALF_THICKNESS_
   return [c[0] + d[0] * r, c[1], c[2] + d[2] * r];
 }
 
+// ===========================================================================
+// THE PLANE -> SCREEN HOMOGRAPHY
+// ===========================================================================
+
+/** The dial's SVG box, in its own units. Local (0,0) is the top-left corner. */
+export const DIAL_BOX = 200;
+/** Dial radius in SVG units. Half the box, so the disc exactly fills it. */
+export const DIAL_R = 100;
+
 /**
- * Everything the view needs, as plain data. PURE, and separate from the DOM on
- * purpose: the preview pane is usually hidden, where nothing renders and
- * getComputedStyle reports frozen values, so the only assertable thing is the
- * state — and this is it.
+ * Local dial coordinates -> world point on the table plane.
  *
- * @returns {{orientationDeg:number, label:string, screenAngleDeg:number, quadrant:string}}
+ * Local +x is world EAST, local +y is world SOUTH — because SVG's y axis points
+ * down and the projection puts north up, so "down the SVG" has to be "south on
+ * the table" for the dial to come out the right way round rather than mirrored.
+ *
+ * @param {number} lx 0..DIAL_BOX
+ * @param {number} ly 0..DIAL_BOX
+ * @param {number[]} centre coin centre in world
  */
-export function arrowState(orientationDeg, elevDeg = SETTLE_ELEV_DEG, azimuthDeg = 0) {
-  // ROUND FIRST, then derive everything from the rounded value. The two
-  // decimals ARE the truth (design doc 6.5), and a raw 89.999999998 is the
-  // outcome's 90.00 in quadrant E — deriving the label from the raw value and
-  // the quadrant from the rounded one would print "90.00" next to quadrant N.
-  const deg = roundOrientation(Number.isFinite(orientationDeg) ? orientationDeg : 0);
+export function dialLocalToWorld(lx, ly, centre) {
+  const k = COIN_RADIUS_M / DIAL_R;                 // metres per SVG unit
+  return [centre[0] + (lx - DIAL_R) * k, centre[1], centre[2] + (ly - DIAL_R) * k];
+}
+
+/**
+ * Solve the 8-parameter homography taking four source points to four
+ * destinations. Plain Gaussian elimination with partial pivoting on an 8x8;
+ * at this size anything cleverer is just more to get wrong.
+ *
+ * @returns {number[]|null} [h0..h7] where
+ *   X = (h0 x + h1 y + h2) / (h6 x + h7 y + 1)
+ *   Y = (h3 x + h4 y + h5) / (h6 x + h7 y + 1)
+ */
+export function solveHomography(src, dst) {
+  if (!src || !dst || src.length !== 4 || dst.length !== 4) return null;
+  const A = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i];
+    const [X, Y] = dst[i];
+    if (![x, y, X, Y].every(Number.isFinite)) return null;
+    A.push([x, y, 1, 0, 0, 0, -x * X, -y * X, X]);
+    A.push([0, 0, 0, x, y, 1, -x * Y, -y * Y, Y]);
+  }
+  for (let col = 0; col < 8; col++) {
+    let piv = col;
+    for (let r = col + 1; r < 8; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+    if (Math.abs(A[piv][col]) < 1e-12) return null;   // degenerate correspondence
+    const t = A[col]; A[col] = A[piv]; A[piv] = t;
+    const p = A[col][col];
+    for (let c = col; c <= 8; c++) A[col][c] /= p;
+    for (let r = 0; r < 8; r++) {
+      if (r === col) continue;
+      const f = A[r][col];
+      if (f === 0) continue;
+      for (let c = col; c <= 8; c++) A[r][c] -= f * A[col][c];
+    }
+  }
+  const h = A.map((row) => row[8]);
+  return h.every(Number.isFinite) ? h : null;
+}
+
+/** Apply a homography to a local point. */
+export function applyHomography(h, x, y) {
+  const w = h[6] * x + h[7] * y + 1;
+  if (!(Math.abs(w) > 1e-12)) return { x: NaN, y: NaN, w };
+  return { x: (h[0] * x + h[1] * y + h[2]) / w, y: (h[3] * x + h[4] * y + h[5]) / w, w };
+}
+
+/**
+ * The exact plane->screen map for the dial, as a homography over local SVG
+ * coordinates, plus the CSS `matrix3d` that reproduces it.
+ *
+ * CSS matrix3d is column-major and divides by w, so a 2D homography embeds as
+ *   matrix3d(h0, h3, 0, h6,  h1, h4, 0, h7,  0, 0, 1, 0,  h2, h5, 0, 1)
+ * which is why this needs no per-element correction: the browser does the
+ * perspective divide the projection does.
+ *
+ * Coordinates are CANVAS-LOCAL (rect.left/top removed), because the element is
+ * absolutely positioned inside the stage at 0,0 — feeding it viewport
+ * coordinates would offset the whole dial by wherever the canvas happens to sit
+ * on the page.
+ */
+export function dialHomography(centre, shot, rect, fovDeg = FOV_DEG) {
+  if (!centre || !shot || !rect || !(rect.width > 0) || !(rect.height > 0)) return null;
+  const local = { left: 0, top: 0, width: rect.width, height: rect.height };
+  const corners = [[0, 0], [DIAL_BOX, 0], [DIAL_BOX, DIAL_BOX], [0, DIAL_BOX]];
+  const dst = [];
+  for (const [lx, ly] of corners) {
+    const p = projectPoint(dialLocalToWorld(lx, ly, centre), shot, local, fovDeg);
+    if (!p.inFront) return null;
+    dst.push([p.x, p.y]);
+  }
+  const h = solveHomography(corners, dst);
+  if (!h) return null;
   return {
-    orientationDeg: deg,
-    label: deg.toFixed(2) + '°',
-    screenAngleDeg: orientationToScreenAngle(deg, elevDeg, azimuthDeg),
-    quadrant: quadrantFromOrientation(deg),
+    h,
+    matrix3d: `matrix3d(${h[0]},${h[3]},0,${h[6]},${h[1]},${h[4]},0,${h[7]},0,0,1,0,${h[2]},${h[5]},0,1)`,
+    at: (lx, ly) => applyHomography(h, lx, ly),
   };
 }
 
 /**
- * The full placed state: the reading, plus where on the canvas the marker goes.
+ * Everything the view needs, as plain data. PURE, and separate from the DOM on
+ * purpose: the preview pane is usually hidden, where nothing renders and
+ * getComputedStyle reports frozen values, so the only assertable thing is state.
+ */
+export function arrowState(orientationDeg, elevDeg = SETTLE_ELEV_DEG, azimuthDeg = 0) {
+  // ROUND FIRST, then derive everything from the rounded value. The two decimals
+  // ARE the truth (design doc 6.5), and a raw 89.999999998 is the outcome's
+  // 90.00 in quadrant E — deriving the label from the raw value and the quadrant
+  // from the rounded one would print "90.00" next to quadrant N.
+  const deg = roundOrientation(Number.isFinite(orientationDeg) ? orientationDeg : 0);
+  return {
+    orientationDeg: deg,
+    label: deg.toFixed(2) + '°',      // telemetry only; the player never sees it
+    screenAngleDeg: orientationToScreenAngle(deg, elevDeg, azimuthDeg),
+    quadrant: quadrantFromOrientation(deg),
+    quadrantIndex: Math.floor(normDeg(deg) / 90) % 4,
+  };
+}
+
+/**
+ * The full placed state: the reading, the dial's transform, and where the
+ * 12-o'clock arrow sits.
  *
  * The coin centre defaults to the shot's target, because the settle shot is
- * built as `{ target: [finalPos[0], COIN_HALF_THICKNESS_M, finalPos[2]] }` —
- * the camera is already looking straight at the coin, so the target IS the
- * centre. Passing it explicitly is there for any framing where that stops
- * being true.
- *
- * @param {number} orientationDeg
- * @param {object} o {shot, rect, fovDeg, centre, offsetM}
+ * built as `{ target: [finalPos[0], COIN_HALF_THICKNESS_M, finalPos[2]] }` — the
+ * camera is already looking straight at the coin, so the target IS the centre.
  */
 export function markerState(orientationDeg, o = {}) {
   const shot = o.shot;
   const base = arrowState(orientationDeg, shot ? shot.elevDeg : SETTLE_ELEV_DEG,
     shot ? shot.azimuthDeg : 0);
-  if (!shot || !o.rect) return { ...base, world: null, screen: null };
+  if (!shot || !o.rect) return { ...base, world: null, screen: null, dial: null };
   const centre = o.centre ?? shot.target;
+  const fov = o.fovDeg ?? FOV_DEG;
   const world = markerWorldPos(base.orientationDeg, centre, o.offsetM ?? MARKER_OFFSET_M);
-  const screen = projectPoint(world, shot, o.rect, o.fovDeg ?? FOV_DEG);
-  // The coin centre too, so the view (and the verifier) can ask which way the
-  // marker sits FROM the coin — the independent cross-check on the projection.
-  const centreScreen = projectPoint(centre, shot, o.rect, o.fovDeg ?? FOV_DEG);
-  // Push outward along the SCREEN direction by a fixed pixel margin, so the
-  // clearance the player sees is the same at every canvas size. Done after
-  // projection on purpose: the required margin is a property of the graphic,
-  // not of the world, so converting it into metres would make it canvas-
-  // dependent again — the exact bug this exists to fix.
-  const clearPx = Number.isFinite(o.clearPx) ? o.clearPx : MARKER_CLEAR_PX;
-  if (screen.inFront && centreScreen.inFront && clearPx > 0) {
-    const dx = screen.x - centreScreen.x;
-    const dy = screen.y - centreScreen.y;
-    const len = Math.hypot(dx, dy);
-    if (len > 1e-6) {
-      screen.x += (dx / len) * clearPx;
-      screen.y += (dy / len) * clearPx;
-    }
-  }
-  return { ...base, world, screen, centreScreen };
+  const screen = projectPoint(world, shot, o.rect, fov);
+  const centreScreen = projectPoint(centre, shot, o.rect, fov);
+  const dial = dialHomography(centre, shot, o.rect, fov);
+  return { ...base, world, screen, centreScreen, dial, centre };
 }
 
 /**
- * The pixels. One thin arrow and one number, small and yellow.
+ * A bearing -> the point on the dial's rim, in local SVG coordinates.
+ * Bearing is clockwise from north; local +y is south, so north is -y.
+ */
+export function dialRimPoint(bearingDeg, r = DIAL_R) {
+  const t = normDeg(bearingDeg) * DEG;
+  return [DIAL_R + Math.sin(t) * r, DIAL_R - Math.cos(t) * r];
+}
+
+/** The four sector paths, in local SVG coordinates. Bucket k spans [90k, 90k+90). */
+export function sectorPaths() {
+  const out = [];
+  for (let k = 0; k < 4; k++) {
+    const [x0, y0] = dialRimPoint(k * 90);
+    const [x1, y1] = dialRimPoint((k + 1) * 90);
+    // sweep-flag 1: increasing bearing is clockwise on screen, and in a y-down
+    // coordinate system that is the positive-angle direction.
+    out.push(`M ${DIAL_R} ${DIAL_R} L ${x0} ${y0} A ${DIAL_R} ${DIAL_R} 0 0 1 ${x1} ${y1} Z`);
+  }
+  return out;
+}
+
+/**
+ * The pixels. A transparent dial painted on the coin.
  *
  * NOTHING HERE ANIMATES VIA CSS. Every visual is written straight to `style` on
  * each call, because a hidden pane never advances a transition and would leave
- * the arrow frozen at its start value forever. State is mirrored onto dataset
+ * the dial frozen at its start value forever. State is mirrored onto dataset
  * attributes so what the DOM says is what is on screen.
  *
- * @param {HTMLElement} hostEl element to build inside
- * @param {object} [opts] {size, colour} — size is the SVG's px box
+ * @param {HTMLElement} hostEl element to build inside (must be a positioned box
+ *        that overlays the canvas at its top-left)
  */
 export function createOrientArrow(hostEl, opts = {}) {
-  const size = opts.size ?? 14;               // "a little upside down triangle"
   const colour = opts.colour ?? ARROW_COLOUR;
   const NS = 'http://www.w3.org/2000/svg';
+  const doc = hostEl.ownerDocument;
 
-  const el = hostEl.ownerDocument.createElement('div');
-  el.className = 'orient-arrow';
+  const el = doc.createElement('div');
+  el.className = 'orient-dial';
   el.style.display = 'none';
-  el.style.position = 'absolute';             // placed over the canvas by show()
-  el.style.alignItems = 'center';
-  el.style.gap = '4px';
-  el.style.color = colour;
-  el.style.font = 'inherit';
-  el.style.fontSize = '13px';
-  el.style.lineHeight = '1';
-  el.style.whiteSpace = 'nowrap';
-  el.style.fontVariantNumeric = 'tabular-nums';
+  el.style.position = 'absolute';
+  el.style.left = '0px';
+  el.style.top = '0px';
+  el.style.width = DIAL_BOX + 'px';
+  el.style.height = DIAL_BOX + 'px';
+  // The homography maps the dial's own box straight onto the canvas, so the
+  // element must not be pre-offset by anything: origin at its own top-left.
+  el.style.transformOrigin = '0 0';
   el.style.pointerEvents = 'none';
 
-  const svg = hostEl.ownerDocument.createElementNS(NS, 'svg');
-  svg.setAttribute('width', String(size));
-  svg.setAttribute('height', String(size));
-  svg.setAttribute('viewBox', '0 0 100 100');
+  const svg = doc.createElementNS(NS, 'svg');
+  svg.setAttribute('width', String(DIAL_BOX));
+  svg.setAttribute('height', String(DIAL_BOX));
+  svg.setAttribute('viewBox', `0 0 ${DIAL_BOX} ${DIAL_BOX}`);
   svg.style.overflow = 'visible';
-  svg.style.flex = '0 0 auto';
+  svg.style.display = 'block';
 
-  // An upside-down triangle, apex DOWN, filled. It does not rotate: the marker's
-  // POSITION carries the bearing now, so a rotating glyph would be saying the
-  // same thing twice and saying it worse — at 14 px a rotated triangle mostly
-  // reads as a wobble. Filled rather than stroked because a 14 px outline is
-  // more antialiasing than shape.
-  const tri = hostEl.ownerDocument.createElementNS(NS, 'path');
-  tri.setAttribute('d', 'M14,22 L86,22 L50,86 Z');
-  tri.setAttribute('fill', colour);
-  svg.appendChild(tri);
+  // four sectors, world-aligned, indexed by floor(deg/90) and never by name
+  const sectors = sectorPaths().map((d) => {
+    const p = doc.createElementNS(NS, 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('fill', colour);
+    p.setAttribute('stroke', 'none');
+    svg.appendChild(p);
+    return p;
+  });
 
-  const label = hostEl.ownerDocument.createElement('span');
-  label.style.color = colour;
-  label.style.fontWeight = '700';
+  // the dividing cross and the rim, thin enough to read as drawn ON the face
+  const spokes = doc.createElementNS(NS, 'path');
+  spokes.setAttribute('d',
+    `M ${DIAL_R} 0 L ${DIAL_R} ${DIAL_BOX} M 0 ${DIAL_R} L ${DIAL_BOX} ${DIAL_R}`);
+  spokes.setAttribute('stroke', colour);
+  spokes.setAttribute('stroke-width', '1.2');
+  spokes.setAttribute('fill', 'none');
+  spokes.setAttribute('opacity', '0.45');
+  svg.appendChild(spokes);
+
+  const rim = doc.createElementNS(NS, 'circle');
+  rim.setAttribute('cx', String(DIAL_R));
+  rim.setAttribute('cy', String(DIAL_R));
+  rim.setAttribute('r', String(DIAL_R));
+  rim.setAttribute('fill', 'none');
+  rim.setAttribute('stroke', colour);
+  rim.setAttribute('stroke-width', '2');
+  rim.setAttribute('opacity', '0.75');
+  svg.appendChild(rim);
+
+  // the 12 o'clock marker: a triangle sitting on the rim at the settled bearing,
+  // drawn in plane coordinates like everything else so it lies on the face too
+  const tick = doc.createElementNS(NS, 'path');
+  tick.setAttribute('fill', colour);
+  svg.appendChild(tick);
 
   el.appendChild(svg);
-  el.appendChild(label);
   hostEl.appendChild(el);
 
   let state = null;
-  let last = null;                            // remembered for reposition()
+  let last = null;
+
+  /** The 12-o'clock triangle, in local dial units, pointing inward at the rim. */
+  function tickPath(deg) {
+    const half = 9;                        // half-width at the base, dial units
+    const depth = 26;                      // how far in from the rim the apex sits
+    const t = normDeg(deg) * DEG;
+    const ux = Math.sin(t), uy = -Math.cos(t);          // outward radial
+    const px = -uy, py = ux;                            // tangent
+    const bx = DIAL_R + ux * DIAL_R, by = DIAL_R + uy * DIAL_R;
+    const ax = DIAL_R + ux * (DIAL_R - depth), ay = DIAL_R + uy * (DIAL_R - depth);
+    return `M ${bx + px * half} ${by + py * half} L ${bx - px * half} ${by - py * half} `
+         + `L ${ax} ${ay} Z`;
+  }
 
   function place(st) {
-    if (!st.screen || !st.screen.inFront) {
-      // Nothing sane to draw. Hiding beats parking it at 0,0, which looks like
-      // a real reading in the corner of the canvas.
+    if (!st.dial) {
+      // Nothing sane to draw. Hiding beats leaving a stale dial pinned to the
+      // last camera, which looks like a real reading.
       el.style.display = 'none';
       el.dataset.placed = '0';
       return;
     }
-    // The TRIANGLE centres on the projected point and the label runs to its
-    // right, so the thing sitting on the coin's rim is the marker itself rather
-    // than the midpoint of marker-plus-text — which would drift with the width
-    // of the number.
-    el.style.left = (st.screen.x - size / 2) + 'px';
-    el.style.top = (st.screen.y - size / 2) + 'px';
-    el.style.display = 'inline-flex';
+    el.style.transform = st.dial.matrix3d;
+    el.style.display = 'block';
     el.dataset.placed = '1';
-    el.dataset.screenX = st.screen.x.toFixed(2);
-    el.dataset.screenY = st.screen.y.toFixed(2);
+    el.dataset.matrix3d = st.dial.matrix3d;
+    const c = st.dial.at(DIAL_R, DIAL_R);
+    el.dataset.centreX = c.x.toFixed(2);
+    el.dataset.centreY = c.y.toFixed(2);
   }
 
   return {
     el,
-    size,
     get state() { return state; },
     /**
-     * Show the marker for a landed orientation, placed on the coin.
+     * Show the dial for a landed orientation, painted on the coin.
      *
      * @param {number} orientationDeg the settled angle, clockwise from North
      * @param {object} [o] {shot, rect, fovDeg, centre, offsetM}
-     *        With no `shot`/`rect` it still shows and still carries the reading,
-     *        just unplaced — the host page can then position it however it likes.
      */
     show(orientationDeg, o = {}) {
       last = { orientationDeg, o };
       state = markerState(orientationDeg, o);
-      label.textContent = state.label;
-      el.style.display = 'inline-flex';
+      sectors.forEach((p, k) => {
+        const on = k === state.quadrantIndex;
+        p.setAttribute('fill-opacity', String(on ? SECTOR_ALPHA.landed : SECTOR_ALPHA.idle));
+        p.dataset.landed = on ? '1' : '0';
+      });
+      tick.setAttribute('d', tickPath(state.orientationDeg));
+      el.style.display = 'block';
       el.dataset.orientation = state.orientationDeg.toFixed(2);
       el.dataset.screenAngle = state.screenAngleDeg.toFixed(4);
       el.dataset.quadrant = state.quadrant;
+      el.dataset.quadrantIndex = String(state.quadrantIndex);
       el.dataset.shown = '1';
-      if (state.screen) place(state);
+      if (state.dial) place(state);
       else el.dataset.placed = '0';
       return state;
     },
     /**
-     * Re-place the marker without changing the reading.
+     * Re-place without changing the reading.
      *
      * The coin no longer re-arms itself after a flip — it sits where it landed
-     * until the player asks for the next one — so the marker can easily outlive
-     * a window resize. Without this it would stay pinned to pixels that no
-     * longer describe the same point in the scene.
+     * until the player asks for the next one — so the dial can easily outlive a
+     * window resize, and a dial pinned to stale pixels reads as the coin having
+     * moved.
      */
     reposition(o = {}) {
       if (!last) return null;
       last.o = { ...last.o, ...o };
       state = markerState(last.orientationDeg, last.o);
-      if (state.screen) place(state);
+      if (state.dial) place(state);
       return state;
     },
     hide() {
@@ -483,8 +603,10 @@ export function createOrientArrow(hostEl, opts = {}) {
       delete el.dataset.orientation;
       delete el.dataset.screenAngle;
       delete el.dataset.quadrant;
-      delete el.dataset.screenX;
-      delete el.dataset.screenY;
+      delete el.dataset.quadrantIndex;
+      delete el.dataset.matrix3d;
+      delete el.dataset.centreX;
+      delete el.dataset.centreY;
     },
   };
 }

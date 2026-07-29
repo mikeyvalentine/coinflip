@@ -36,15 +36,21 @@ import {
   orientationToScreenAngle, screenAngleToOrientation, arrowState,
   createOrientArrow, SETTLE_ELEV_DEG, ARROW_COLOUR,
   projectPoint, markerWorldPos, markerState, shotBasis,
-  MARKER_OFFSET_M, FOV_DEG,
+  MARKER_OFFSET_M, FOV_DEG, SECTOR_ALPHA, dialRimPoint, DIAL_R, DIAL_BOX,
 } from '../flip3d/orientArrow.js';
 import { cameraBasis, screenYToWorldY } from '../flip3d/scene.js';
 import { SETTLE_CAM } from '../flip3d/player.js';
 import { COIN_RADIUS_M, COIN_HALF_THICKNESS_M } from '../flip3d/contract.js';
 
 /** The settle framing, exactly as player.js#SETTLE_CAM builds it. */
+// Read from SETTLE_CAM, not retyped. A verifier that hardcodes the camera it is
+// checking is independent of the IMPLEMENTATION, which is the point — and
+// independent of the INPUT, which is just wrong: it goes on asserting a camera
+// that no longer exists, and passes. That exact flaw was found in
+// tools/verify-pickup.mjs, and this file had it too.
 const SETTLE_SHOT = {
-  target: [0, COIN_HALF_THICKNESS_M, 0], distance: 0.105, elevDeg: 66, azimuthDeg: 0,
+  target: [0, COIN_HALF_THICKNESS_M, 0],
+  distance: SETTLE_CAM.distance, elevDeg: SETTLE_CAM.elevDeg, azimuthDeg: 0,
 };
 /** The canvas the scene actually resizes to: capped at 880 wide, 1.6 aspect. */
 const RECT = { left: 0, top: 0, width: 880, height: 550 };
@@ -333,8 +339,9 @@ console.log('\n=== (7) the readout and the quadrant can never disagree ===');
 
   // the wrap case in particular: 359.999 rounds to 360.00, which IS 0.00 / N
   const wrap = arrowState(359.999);
-  ok(wrap.label === '0.00°' && wrap.quadrant === 'N',
-    '359.999 does not wrap to 0.00 / N', { label: wrap.label, quadrant: wrap.quadrant });
+  ok(wrap.label === '0.00°' && wrap.quadrant === QUADRANTS[0],
+    '359.999 does not wrap to 0.00 / the first bucket',
+    { label: wrap.label, quadrant: wrap.quadrant, want: QUADRANTS[0] });
   console.log(`  359.999 -> ${wrap.label} quadrant ${wrap.quadrant}`);
 
   // random fuzz over the full circle
@@ -369,13 +376,25 @@ console.log('\n=== (8) THE REAL LIBRARY — all 1024 baked settle angles ===');
     const st = arrowState(e.orientationDeg, SETTLE_ELEV_DEG);
     n++;
     perQuad[st.quadrant]++;
-    // The bake's own declared quadrant is the authority; the arrow must never
-    // put the coin in a different bucket from the one the bet pays out on.
-    const good = st.quadrant === e.quadrant
+    // COMPARE THE BUCKET, NOT THE NAME. The bake's stored `quadrant` string is
+    // a NAME, and the names were just changed (N/E/S/W -> NE/SE/SW/NW, because
+    // [0,90) runs from north TO east and so is the north-east sector; bare
+    // cardinals are now reserved for exact 90-degree multiples). The baked
+    // metadata still carries the old spelling and is not this file's to rewrite.
+    //
+    // What must actually hold is that the dial fills the same 90-degree BUCKET
+    // the bet resolves in, and that its name is whatever contract.js currently
+    // calls that bucket. Indexing by floor(deg/90) is name-agnostic, so this
+    // assertion survives the rename instead of being a second place that has to
+    // be edited in lockstep — which is how the two spellings drifted apart in
+    // the first place.
+    const wantIndex = Math.floor(normDeg(roundOrientation(e.orientationDeg)) / 90) % 4;
+    const good = st.quadrantIndex === wantIndex
+      && st.quadrant === QUADRANTS[wantIndex]
       && Number.isFinite(st.screenAngleDeg)
       && st.screenAngleDeg >= 0 && st.screenAngleDeg < 360
       && st.label === roundOrientation(e.orientationDeg).toFixed(2) + '°';
-    if (!good) { bad++; if (badRows.length < 4) badRows.push({ id: e.id, declared: e.orientationDeg, quad: e.quadrant, got: st }); }
+    if (!good) { bad++; if (badRows.length < 4) badRows.push({ id: e.id, declared: e.orientationDeg, wantIndex, got: st }); }
   }
   ok(bad === 0, 'a baked clip renders into the wrong quadrant', { bad, badRows });
   console.log(`  ${n} baked settle angles: 0 quadrant mismatches, every screen angle finite`);
@@ -390,11 +409,12 @@ console.log('\n=== (8) THE REAL LIBRARY — all 1024 baked settle angles ===');
 }
 
 // ===========================================================================
-console.log('\n=== (9) the view writes its state where a hidden pane can be read ===');
+console.log('\n=== (9) the view paints a dial, and writes its state where a hidden pane can be read ===');
 {
-  // No DOM in Node, so a stub document. This does NOT prove the arrow looks
+  // No DOM in Node, so a stub document. This does NOT prove the dial looks
   // right — nothing headless can — but it does prove the element carries the
-  // state, which is the only thing a hidden pane could ever be asked.
+  // state and the geometry, which is the only thing a hidden pane could ever be
+  // asked for.
   const doc = {
     createElement: (tag) => mk(tag),
     createElementNS: (ns, tag) => mk(tag),
@@ -409,61 +429,67 @@ console.log('\n=== (9) the view writes its state where a hidden pane can be read
     };
   }
   const host = mk('div');
-  const arrow = createOrientArrow(host, {});
+  const dial = createOrientArrow(host, {});
 
-  ok(host.children.length === 1, 'the arrow did not mount into its host');
-  ok(arrow.el.style.display === 'none', 'the arrow is visible before the coin lands');
-  ok(arrow.el.dataset.shown === undefined || arrow.el.dataset.shown === '0', 'the arrow starts shown');
+  ok(host.children.length === 1, 'the dial did not mount into its host');
+  ok(dial.el.style.display === 'none', 'the dial is visible before the coin lands');
   console.log('  starts hidden — it appears when the coin settles, not before');
 
-  const st = arrow.show(137.42, { shot: SETTLE_SHOT, rect: RECT });
-  ok(arrow.el.style.display === 'inline-flex', 'show() did not reveal the arrow');
-  ok(arrow.el.dataset.shown === '1', 'dataset.shown not set');
-  ok(arrow.el.dataset.orientation === '137.42', 'dataset.orientation wrong', { v: arrow.el.dataset.orientation });
-  ok(arrow.el.dataset.quadrant === 'E', 'dataset.quadrant wrong', { v: arrow.el.dataset.quadrant });
-  ok(st.label === '137.42°', 'the label is wrong', { label: st.label });
+  const st = dial.show(137.42, { shot: SETTLE_SHOT, rect: RECT });
+  ok(dial.el.style.display === 'block', 'show() did not reveal the dial');
+  ok(dial.el.dataset.shown === '1', 'dataset.shown not set');
+  ok(dial.el.dataset.orientation === '137.42', 'dataset.orientation wrong', { v: dial.el.dataset.orientation });
+  ok(dial.el.dataset.quadrant === st.quadrant, 'dataset.quadrant disagrees with the state');
+  ok(dial.el.dataset.quadrantIndex === String(st.quadrantIndex), 'dataset.quadrantIndex wrong');
 
-  // The glyph is an upside-down triangle and it does NOT rotate — the marker's
-  // position carries the bearing now. Assert the shape is apex-down: two points
-  // share the top edge and the third sits below both.
-  const svg = arrow.el.children.find((c) => c.tagName === 'svg');
-  const tri = svg.children[0];
-  const d = tri.getAttribute('d') || '';
-  const pts = [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [parseFloat(m[1]), parseFloat(m[2])]);
-  ok(pts.length === 3, 'the glyph is not a triangle', { d, pts });
-  const ys = pts.map((p) => p[1]).sort((a, b) => a - b);
-  ok(ys[0] === ys[1] && ys[2] > ys[1], 'the triangle is not apex-DOWN', { ys });
-  ok(!/rotate/.test(d + (tri.getAttribute('transform') || '')), 'the triangle rotates', { d });
-  ok(tri.getAttribute('fill') === ARROW_COLOUR, 'the triangle is not the declared yellow');
-  ok(arrow.el.style.color === ARROW_COLOUR, 'the label is not the declared yellow');
-  console.log(`  glyph is an apex-down triangle, unrotated, ${ARROW_COLOUR}`);
+  // THE DEGREE NUMBER IS GONE FROM THE UI. It is still carried in the state for
+  // telemetry, but nothing in the element may render it — the wager is on the
+  // quadrant, and two decimals was precision nobody bets on.
+  const textNodes = [];
+  (function walk(n) { if (n.textContent) textNodes.push(n.textContent); (n.children || []).forEach(walk); }(dial.el));
+  ok(!textNodes.some((t) => /[0-9]/.test(t)), 'the dial renders a number somewhere', { textNodes });
+  console.log('  no number is rendered anywhere in the element (state still carries it)');
 
-  // it must be absolutely placed on the canvas, at the projected point
-  ok(arrow.el.style.position === 'absolute', 'the marker is not absolutely placed');
-  ok(arrow.el.dataset.placed === '1', 'the marker was not placed', { d: arrow.el.dataset });
-  const lx = parseFloat(arrow.el.style.left), ly = parseFloat(arrow.el.style.top);
-  ok(Math.abs(lx - (st.screen.x - arrow.size / 2)) < 1e-6
-    && Math.abs(ly - (st.screen.y - arrow.size / 2)) < 1e-6,
-  'the triangle is not centred on the projected point', { lx, ly, screen: st.screen });
-  console.log(`  137.42 deg -> placed at (${st.screen.x.toFixed(1)}, ${st.screen.y.toFixed(1)}), quadrant ${arrow.el.dataset.quadrant}`);
+  const svg = dial.el.children.find((c) => c.tagName === 'svg');
+  const paths = svg.children.filter((c) => c.tagName === 'path');
+  const sectors = paths.filter((c) => c.dataset.landed !== undefined);
+  ok(sectors.length === 4, 'there are not exactly four sectors', { n: sectors.length });
 
-  // NOTHING may animate via CSS — a hidden pane would freeze it at frame zero
-  const styleText = JSON.stringify(arrow.el.style) + JSON.stringify(svg.style);
-  ok(!/transition|animation/i.test(styleText), 'the arrow animates via CSS', { styleText });
+  // exactly one sector is filled brighter, and it is the one the coin landed in
+  const landed = sectors.filter((q) => q.dataset.landed === '1');
+  ok(landed.length === 1, 'not exactly one sector is marked landed', { n: landed.length });
+  ok(sectors.indexOf(landed[0]) === st.quadrantIndex,
+    'the wrong sector is filled', { filled: sectors.indexOf(landed[0]), want: st.quadrantIndex });
+  const alphas = sectors.map((q) => parseFloat(q.getAttribute('fill-opacity')));
+  ok(alphas.filter((a) => a === SECTOR_ALPHA.landed).length === 1
+     && alphas.filter((a) => a === SECTOR_ALPHA.idle).length === 3,
+    'the sector alphas are not one landed and three idle', { alphas });
+  ok(SECTOR_ALPHA.landed < 0.5 && SECTOR_ALPHA.idle < 0.2,
+    'the dial is too opaque — the coin face must read through it', { SECTOR_ALPHA });
+  console.log('  four sectors, alpha ' + SECTOR_ALPHA.idle + ' idle / ' + SECTOR_ALPHA.landed + ' landed');
+
+  // the transform is a matrix3d — an affine matrix() cannot carry the
+  // perspective divide, and this element spans the whole coin
+  ok(/^matrix3d\(/.test(dial.el.style.transform), 'the dial is not transformed by matrix3d',
+    { t: dial.el.style.transform });
+  ok(dial.el.style.transformOrigin === '0 0', 'the transform origin is not the box corner');
+  console.log('  transform is matrix3d with origin 0 0 — the homography does the placing');
+
+  // NOTHING may animate: a hidden pane never advances a transition, so anything
+  // driven by one would be frozen at its start value forever.
+  const anim = [];
+  (function walk(n) {
+    const stl = n.style || {};
+    if (stl.transition || stl.animation) anim.push(n.tagName);
+    (n.children || []).forEach(walk);
+  }(dial.el));
+  ok(anim.length === 0, 'something animates via CSS', { anim });
   console.log('  no CSS transition or animation anywhere on the element');
 
-  arrow.hide();
-  ok(arrow.el.style.display === 'none', 'hide() did not hide the arrow');
-  ok(arrow.el.dataset.shown === '0', 'hide() left dataset.shown set');
-  ok(arrow.el.dataset.orientation === undefined, 'hide() left a stale orientation on the element');
-  ok(arrow.state === null, 'hide() left stale state');
+  dial.hide();
+  ok(dial.el.style.display === 'none' && dial.el.dataset.shown === '0', 'hide() did not clear');
+  ok(dial.el.dataset.orientation === undefined, 'hide() left a stale reading');
   console.log('  hide() clears the element and the state together');
-
-  // re-show must fully replace, never merge with the previous reading
-  arrow.show(300.05);
-  ok(arrow.el.dataset.orientation === '300.05' && arrow.el.dataset.quadrant === 'W',
-    'a second show() did not replace the first', { d: arrow.el.dataset });
-  console.log('  a second show() replaces the reading outright');
 }
 
 // ===========================================================================
@@ -520,31 +546,62 @@ console.log('\n=== (11) THE PLACEMENT: cardinals land exactly up / right / down 
 }
 
 // ===========================================================================
-console.log('\n=== (12) the marker clears the coin and never covers it ===');
+console.log('\n=== (12) REGISTRATION: the dial rim sits on the coin rim ===');
 {
-  // The coin's silhouette: radius COIN_RADIUS_M horizontally, squashed by
-  // sin(elev) vertically. The marker must sit OUTSIDE it at every bearing, or
-  // it is drawn on top of the face whose orientation it is reporting.
-  const c = projectPoint(SETTLE_SHOT.target, SETTLE_SHOT, RECT);
-  const rimAt = (deg) => {
-    const p = markerWorldPos(deg, SETTLE_SHOT.target, 0);       // ON the rim
-    const s = projectPoint(p, SETTLE_SHOT, RECT);
-    return Math.hypot(s.x - c.x, s.y - c.y);
-  };
-  let worstClear = Infinity, worstAt = null, inside = 0, minGap = Infinity;
-  for (let deg = 0; deg < 360; deg += 0.5) {
-    const st = markerState(deg, { shot: SETTLE_SHOT, rect: RECT });
-    const d = Math.hypot(st.screen.x - c.x, st.screen.y - c.y);
-    const rim = rimAt(deg);
-    const clear = d - rim;
-    if (d <= rim) inside++;
-    if (clear < worstClear) { worstClear = clear; worstAt = f2(deg); }
-    minGap = Math.min(minGap, d);
+  // THE HEADLINE TEST. The overlay is painted on the coin, so its boundary must
+  // land on the coin's boundary the whole way round. A dial 3 px out at one
+  // bearing looks broken in a way a numeric readout never could — and it is the
+  // failure mode a linearised transform produces silently.
+  const rows = [];
+  let worstAll = 0;
+  for (const W of [1400, 880, 640, 474, 360]) {
+    const rect = { left: 0, top: 0, width: W, height: Math.round(W / 1.6) };
+    const st = markerState(0, { shot: SETTLE_SHOT, rect });
+    let worst = 0, at = 0;
+    for (let deg = 0; deg < 360; deg += 1) {
+      const rp = dialRimPoint(deg);                 // where the dial DRAWS its rim
+      const drawn = st.dial.at(rp[0], rp[1]);
+      const truth = projectPoint(markerWorldPos(deg, SETTLE_SHOT.target, 0), SETTLE_SHOT,
+        { left: 0, top: 0, width: rect.width, height: rect.height });
+      const e = Math.hypot(drawn.x - truth.x, drawn.y - truth.y);
+      if (e > worst) { worst = e; at = deg; }
+    }
+    worstAll = Math.max(worstAll, worst);
+    rows.push({ canvas: W + ' px', 'worst rim error': worst.toExponential(2) + ' px', 'at bearing': at + ' deg' });
   }
-  ok(inside === 0, 'the marker falls inside the coin silhouette somewhere', { inside });
-  ok(worstClear > 4, 'the marker crowds the rim', { worstClear, worstAt });
-  console.log(`  720 bearings: never inside the coin; tightest clearance ${worstClear.toFixed(1)} px at ${worstAt} deg`);
-  console.log(`  closest approach to the coin centre ${minGap.toFixed(1)} px (coin is ~${(COIN_RADIUS_M * 2 * 9.78 * 1000).toFixed(0)} px across)`);
+  console.table(rows);
+  ok(worstAll < 0.01, 'the dial does not register with the coin rim', { worstAll });
+  console.log('  worst disagreement anywhere, any canvas: ' + worstAll.toExponential(2) + ' px');
+  console.log('  that is float noise rather than approximation — a plane-to-plane');
+  console.log('  projective map IS a homography, so four correspondences reproduce it.');
+
+  // AND THE COMPARISON THAT JUSTIFIES THE CHOICE: what the cheaper obvious
+  // approach, an affine Jacobian about the centre, costs over this footprint.
+  const rect = { left: 0, top: 0, width: 880, height: 550 };
+  const c = SETTLE_SHOT.target;
+  const eps = 1e-4;
+  const p0 = projectPoint(c, SETTLE_SHOT, rect);
+  const pe = projectPoint([c[0] + eps, c[1], c[2]], SETTLE_SHOT, rect);
+  const pn = projectPoint([c[0], c[1], c[2] - eps], SETTLE_SHOT, rect);
+  const Je = [(pe.x - p0.x) / eps, (pe.y - p0.y) / eps];
+  const Jn = [(pn.x - p0.x) / eps, (pn.y - p0.y) / eps];
+  let worstAffine = 0, affineAt = 0;
+  for (let deg = 0; deg < 360; deg += 1) {
+    const t = deg * Math.PI / 180;
+    const east = Math.sin(t) * COIN_RADIUS_M;
+    const north = Math.cos(t) * COIN_RADIUS_M;
+    const ax = p0.x + Je[0] * east + Jn[0] * north;
+    const ay = p0.y + Je[1] * east + Jn[1] * north;
+    const truth = projectPoint(markerWorldPos(deg, c, 0), SETTLE_SHOT, rect);
+    const e = Math.hypot(ax - truth.x, ay - truth.y);
+    if (e > worstAffine) { worstAffine = e; affineAt = deg; }
+  }
+  console.log('  an affine Jacobian would be out by ' + worstAffine.toFixed(2) + ' px at ' + affineAt + ' deg');
+  ok(worstAffine > 0.5,
+    'the affine error is negligible, so this section is not discriminating',
+    { worstAffine });
+  console.log('  (asserted NON-negligible on purpose: if affine were good enough here,');
+  console.log('   this test would prove nothing and the homography would be ceremony)');
 }
 
 // ===========================================================================
@@ -722,72 +779,30 @@ console.log('\n=== (17) reposition() survives a resize without changing the read
       appendChild(c) { this.children.push(c); return c; },
     };
   }
-  const arrow = createOrientArrow(mk2('div'), {});
-  const a = arrow.show(212.34, { shot: SETTLE_SHOT, rect: RECT });
+  const dial = createOrientArrow(mk2('div'), {});
+  const a = dial.show(212.34, { shot: SETTLE_SHOT, rect: RECT });
   const small = { left: 0, top: 0, width: 440, height: 275 };
-  const b = arrow.reposition({ rect: small });
-  ok(b.orientationDeg === a.orientationDeg && b.label === a.label,
-    'reposition() changed the reading', { a: a.label, b: b.label });
-  // It is NO LONGER a clean halving, and that is the fix rather than a
-  // regression: the world offset scales with the canvas but the pixel clearance
-  // deliberately does not, because the triangle and label are a fixed size.
-  // What must hold is that the marker still sits on the coin's bearing and
-  // still clears the rim — so check the DIRECTION from the coin centre is
-  // preserved, not that the raw coordinates halved.
-  const ang = (s, c) => Math.atan2(s.y - c.y, s.x - c.x) * 180 / Math.PI;
-  const da = Math.abs(ang(a.screen, a.centreScreen) - ang(b.screen, b.centreScreen));
-  ok(da < 1e-6, 'reposition() moved the marker off its bearing', { da, a: a.screen, b: b.screen });
-  const ra = Math.hypot(a.screen.x - a.centreScreen.x, a.screen.y - a.centreScreen.y);
-  const rb = Math.hypot(b.screen.x - b.centreScreen.x, b.screen.y - b.centreScreen.y);
-  ok(rb < ra && rb > ra / 2,
-    'reposition() did not track the canvas at all, or scaled as if the margin were world-space',
-    { ra, rb });
-  console.log(`  212.34 deg: (${a.screen.x.toFixed(1)}, ${a.screen.y.toFixed(1)}) at 880x550 `
-    + `-> (${b.screen.x.toFixed(1)}, ${b.screen.y.toFixed(1)}) at 440x275, reading unchanged`);
+  const b = dial.reposition({ rect: small });
+  ok(b.orientationDeg === a.orientationDeg && b.quadrant === a.quadrant,
+    'reposition() changed the reading', { a: a.orientationDeg, b: b.orientationDeg });
 
-  arrow.hide();
-  ok(arrow.reposition() === null, 'reposition() after hide() resurrected a stale reading');
-  console.log('  reposition() after hide() is inert — no stale marker comes back');
+  // Halving the canvas halves every projected coordinate, so the dial's centre
+  // and its radius must both halve. Checked THROUGH the homography rather than
+  // against a stored position, because the homography is the placement now.
+  const ca = a.dial.at(DIAL_R, DIAL_R), cb = b.dial.at(DIAL_R, DIAL_R);
+  ok(Math.abs(cb.x - ca.x / 2) < 1e-6 && Math.abs(cb.y - ca.y / 2) < 1e-6,
+    'the dial centre did not rescale with the canvas', { ca, cb });
+  const ea = a.dial.at(DIAL_BOX, DIAL_R), eb = b.dial.at(DIAL_BOX, DIAL_R);
+  const ra = Math.hypot(ea.x - ca.x, ea.y - ca.y);
+  const rb = Math.hypot(eb.x - cb.x, eb.y - cb.y);
+  ok(Math.abs(rb - ra / 2) < 1e-6, 'the dial radius did not rescale with the canvas', { ra, rb });
+  console.log('  212.34 deg: centre (' + ca.x.toFixed(1) + ', ' + ca.y.toFixed(1) + ') r ' + ra.toFixed(1) + ' at 880x550');
+  console.log('  -> centre (' + cb.x.toFixed(1) + ', ' + cb.y.toFixed(1) + ') r ' + rb.toFixed(1) + ' at 440x275, reading unchanged');
+
+  dial.hide();
+  ok(dial.reposition() === null, 'reposition() after hide() resurrected a stale reading');
+  console.log('  reposition() after hide() is inert — no stale dial comes back');
 }
 
-// ===========================================================================
-console.log('\n=== CLEARANCE IS IN PIXELS, NOT METRES ===');
-{
-  // The bug this pins: the marker offset is a world distance, so it SHRINKS
-  // with the canvas, while the triangle and label are drawn at a fixed pixel
-  // size. On a 474 px window that left 13.3 px of clearance under a 14 px
-  // triangle — the marker sat on the coin. Verifying "outside the silhouette"
-  // in world or NDC terms passed the whole time, because it is true and it is
-  // not the question. The question is whether the GRAPHIC clears the rim.
-  const shot = { target: [0, COIN_HALF_THICKNESS_M, 0], distance: SETTLE_CAM.distance,
-    elevDeg: SETTLE_CAM.elevDeg, azimuthDeg: 0 };
-  const MIN_CLEAR_PX = 18;   // the triangle is 14 px; this leaves real air
-  const rows = [];
-  let worstOverall = Infinity;
-  for (const w of [1400, 880, 640, 474, 360]) {
-    const rect = { left: 0, top: 0, width: w, height: Math.round(w / 1.6) };
-    let worst = Infinity; let at = 0;
-    for (let deg = 0; deg < 360; deg += 1) {
-      const st = markerState(deg, { shot, rect });
-      const d = compassToDir(deg);
-      const rim = projectPoint([d[0] * COIN_RADIUS_M, COIN_HALF_THICKNESS_M, d[2] * COIN_RADIUS_M], shot, rect);
-      const c = st.centreScreen;
-      const clear = Math.hypot(st.screen.x - c.x, st.screen.y - c.y)
-                  - Math.hypot(rim.x - c.x, rim.y - c.y);
-      if (clear < worst) { worst = clear; at = deg; }
-    }
-    worstOverall = Math.min(worstOverall, worst);
-    rows.push({ canvas: w + ' px', 'worst clearance': worst.toFixed(1) + ' px', 'at bearing': at + ' deg' });
-  }
-  console.table(rows);
-  ok(worstOverall >= MIN_CLEAR_PX,
-    'the marker graphic does not clear the coin rim at some canvas size',
-    { worstOverall: +worstOverall.toFixed(1), need: MIN_CLEAR_PX });
-  console.log(`  worst clearance anywhere, any canvas: ${worstOverall.toFixed(1)} px (floor ${MIN_CLEAR_PX})`);
-  console.log('  the world offset still scales; the pixel margin is what puts a FLOOR');
-  console.log('  under it, so shrinking the window can no longer put the marker on the coin.');
-}
-
-// ===========================================================================
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

@@ -26,7 +26,7 @@
 // ---------------------------------------------------------------------------
 
 import {
-  READY_SHOT, HOLD_SHOT, HOLD_TRANSITION_MS, LIFT, liftFraction, cameraBasis,
+  READY_SHOT, HOLD_SHOT, HOLD_TRANSITION_MS, LIFT, liftFraction, cameraBasis, SCENE_FOV_DEG,
   screenYToWorldY, worldYToScreenY, shadowOffsetFor, KEY_LIGHT_POS, SHADOW_RADIUS,
 } from '../flip3d/scene.js';
 import { COIN_HALF_THICKNESS_M, COIN_RADIUS_M, COIN_DIAMETER_M } from '../flip3d/contract.js';
@@ -36,7 +36,11 @@ const fail = (msg, extra) => { failures++; console.log('  FAIL', msg, extra ? JS
 const ok = (cond, msg, extra) => { if (!cond) fail(msg, extra); return cond; };
 const f4 = (n) => +n.toFixed(4);
 
-const FOV = 30;
+// Read from the scene rather than restated. It was a literal 30 here while
+// scene.js also said 30 in three places; the lens has since widened to 45 and a
+// verifier carrying its own stale copy would have gone on checking a camera the
+// game no longer uses — and passing.
+const FOV = SCENE_FOV_DEG;
 const rectOf = (height, top = 0) => ({ top, height });
 
 // ===========================================================================
@@ -44,9 +48,15 @@ console.log('=== (1) the camera basis matches the rig applyShot() builds ===');
 {
   const b = cameraBasis(READY_SHOT);
   // Recomputed here from the shot's own definition, independently of the
-  // implementation: elevation 34 deg, azimuth 0, distance 0.15 from the target.
-  const e = 34 * Math.PI / 180;
-  const want = [0, READY_SHOT.target[1] + Math.sin(e) * 0.15, Math.cos(e) * 0.15];
+  // implementation. The distance and elevation are READ FROM THE SHOT rather
+  // than written out: they were literals (34 deg, 0.15 m) and READY_SHOT has
+  // since moved to 0.10 m to hold the coin's apparent size under a wider lens,
+  // which left this "independent" check asserting a camera that no longer
+  // existed. Independent of the IMPLEMENTATION is the point; independent of the
+  // INPUT is just wrong.
+  const e = READY_SHOT.elevDeg * Math.PI / 180;
+  const d = READY_SHOT.distance;
+  const want = [0, READY_SHOT.target[1] + Math.sin(e) * d, Math.cos(e) * d];
   const dPos = Math.hypot(b.pos[0] - want[0], b.pos[1] - want[1], b.pos[2] - want[2]);
   ok(dPos < 1e-12, 'camera position disagrees with the shot', { got: b.pos.map(f4), want: want.map(f4) });
 
@@ -213,7 +223,12 @@ console.log('\n=== (6) the HOLD framing keeps the coin in frame and opens the th
   ]);
   ok(after > before * 1.6, 'the hold framing did not meaningfully open the throw',
     { before: f4(before), after: f4(after) });
-  ok(after > 250 && after < 520, 'the stroke is an unusable length on the default canvas',
+  // The usable window moved with the lens. A wider FOV fits more metres into
+  // the same pixels, and the raised HOLD target spends that on height rather
+  // than on table, so the stroke grew again. Still a real bound at both ends: a
+  // stroke under ~250 px cannot be aimed and one over the canvas height cannot
+  // be completed without running off the edge.
+  ok(after > 250 && after < 700, 'the stroke is an unusable length on the default canvas',
     { strokePx: f4(after) });
   console.log(`  the throw gained ${(after / before).toFixed(2)}x the screen and ${((LIFT.maxY - LIFT.minY) / (OLD_MAX_Y - LIFT.minY)).toFixed(2)}x the world`);
 

@@ -579,7 +579,7 @@ window.COINFLIP3D = {
         orientationDeg: e.orientationDeg, quadrant: e.quadrant, edge: false, clipId: e.id,
       });
     } else {
-      clip = buildProceduralClip({ startFace: 'Heads', side: 'Heads', spins: 28, orientationDeg: 40, quadrant: 'N' }, { seed: 'bench' });
+      clip = buildProceduralClip({ startFace: 'Heads', side: 'Heads', spins: 28, orientationDeg: 40, quadrant: 'NE' }, { seed: 'bench' });
     }
     const a = analyzeClip(clip);
     const f = clip.frames;

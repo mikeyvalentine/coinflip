@@ -35,6 +35,7 @@ import {
 import { analyzeClip, clipTimeScale, buildProceduralClip } from '../flip3d/clip.js';
 import { loadClipLibrary } from '../flip3d/library.js';
 import { upDot, expectedSide } from '../flip3d/contract.js';
+import { SCENE_FOV_DEG } from '../flip3d/scene.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let failures = 0;
@@ -311,7 +312,13 @@ console.log('\n=== (6) the push-in keeps the coin in frame ===');
   // |pos| * (1 - lead) horizontally, and that offset subtends an angle at the
   // camera which GROWS as the camera closes in. The 30 deg vertical FOV over a
   // 1.6 aspect gives ~46 deg horizontal; half of that is the edge of frame.
-  const FOV_V = 30, ASPECT = 1.6;
+  // Read the lens from scene.js rather than retyping it. This said 30 while the
+  // camera had been widened to 45, so it was measuring the NEW camera distances
+  // against the OLD frame and reporting the coin as nearly out of shot when it
+  // is comfortably inside. Third instance of this same flaw today — a verifier
+  // that hardcodes its input is independent of the implementation (good) and of
+  // the thing it is checking (useless).
+  const FOV_V = SCENE_FOV_DEG, ASPECT = 1.6;
   const halfH = Math.atan(Math.tan(FOV_V / 2 * Math.PI / 180) * ASPECT) * 180 / Math.PI;
   let worstFill = 0, worstCase = null, out = 0;
   for (const clip of clips) {

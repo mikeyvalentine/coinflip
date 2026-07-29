@@ -41,7 +41,40 @@ const smoothstep = (t) => { const x = clamp(t, 0, 1); return x * x * (3 - 2 * x)
 // Azimuth 0 keeps the camera due SOUTH of the coin, so screen-up is exactly
 // -Z = NORTH and screen-right is +X = EAST. The ORIENTATION bet is only
 // readable because that mapping is fixed — see the note in coinflip-3d.html.
-export const READY_SHOT = { target: [0, 0.004, 0], distance: 0.15, elevDeg: 34, azimuthDeg: 0 };
+/**
+ * THE LENS. Vertical field of view, degrees.
+ *
+ * 45 is a wide-normal — about a 41 mm equivalent on full frame — and it replaces
+ * a 30 deg long lens (~65 mm). The brief was "the camera should be wide angle",
+ * and the reason it matters is not size but DEPTH: a long lens flattens the
+ * flight, so the coin appeared to hang in a shallow space and the apex push-in
+ * had nowhere to come from. A wide lens exaggerates near-far difference, which
+ * is exactly the sensation an arcing coin should give.
+ *
+ * WHY NOT WIDER. Measured on an 880x550 canvas at the flight framing's apex
+ * distance of 0.40 m, the coin spans 105 px at 30 deg, 68 px at 45, 54 px at 55
+ * and 49 px at 60. Past ~45 the coin stops reading as a tumbling disc at the top
+ * of its arc, which is the one moment the spin has to be legible. 45 buys the
+ * depth without spending the subject.
+ *
+ * IT IS A LITERAL IN ONE PLACE ONLY. It used to be the number 30 written into
+ * the PerspectiveCamera and into two projection defaults independently, which is
+ * three chances for them to disagree — and a projection that disagrees with the
+ * camera puts the coin somewhere other than under the finger.
+ */
+export const SCENE_FOV_DEG = 45;
+
+/**
+ * The resting framing, before the coin is picked up.
+ *
+ * The distance came in with the lens: at 30 deg / 0.15 m the coin spanned
+ * ~281 px, and at 45 deg the same 0.15 m would leave it 181 px — the wide angle
+ * would have read as "everything got smaller" rather than as perspective. Moving
+ * to 0.10 m restores ~272 px, so what actually changes is the character of the
+ * space rather than the size of the subject. That is the whole point of pairing
+ * a wider lens with a closer camera.
+ */
+export const READY_SHOT = { target: [0, 0.004, 0], distance: 0.10, elevDeg: 34, azimuthDeg: 0 };
 
 /**
  * The framing while the coin is HELD. Picking it up drops the table out of the
@@ -64,14 +97,20 @@ export const READY_SHOT = { target: [0, 0.004, 0], distance: 0.15, elevDeg: 34, 
  * on nothing or the world would visibly lie. Moving the camera changes what you
  * can see; moving the table changes what is true.
  *
- * Measured against this shot (tools/verify-pickup.mjs recomputes it rather than
- * trusting this comment):
- *   frame top on the lift line   0.1084 m  (was 0.0451)
- *   usable lift ceiling          0.094 m   (was 0.032)  — 2.9x the room
- *   stroke, default canvas       385 px    (was 196)    — 2.0x the screen
- *   coin at rest                 69 px     (was 114)    — still large
+ * THE TARGET WENT UP WITH THE LENS. A wider FOV sees more of everything,
+ * including the table, so at 45 deg the old target of 0.05 let the table creep
+ * back up to 155 px off the bottom — undoing most of the room this shot exists
+ * to make. Raising the target to 0.08 puts it back at 93 px, so the wide lens
+ * buys depth without giving back the throwing space.
+ *
+ * Measured against this shot at SCENE_FOV_DEG (tools/verify-pickup.mjs
+ * recomputes all of it rather than trusting this comment):
+ *   frame top on the lift line   0.1643 m  (30 deg / old target: 0.1084)
+ *   usable lift ceiling          0.150 m   (was 0.094, originally 0.032)
+ *   stroke, default canvas       401 px    (was 385, originally 196)
+ *   table surface               93 px off the bottom of a 550 px canvas
  */
-export const HOLD_SHOT = { target: [0, 0.05, 0], distance: 0.22, elevDeg: 28, azimuthDeg: 0 };
+export const HOLD_SHOT = { target: [0, 0.08, 0], distance: 0.22, elevDeg: 28, azimuthDeg: 0 };
 
 /**
  * How long the READY -> HOLD framing transition takes, in ms.
@@ -129,23 +168,26 @@ export function lerpShot(a, b, k) {
 export const LIFT = {
   /** Resting on the table — the coin's centre sits half a thickness up. */
   minY: COIN_HALF_THICKNESS_M,
-  // The ceiling is set by the FRAME, not by taste — specifically by HOLD_SHOT,
-  // because that is the framing the coin is actually lifted in. Its top edge
-  // crosses the plane z = 0 at y = 0.1084 m (asserted in tools/verify-pickup.mjs,
-  // which recomputes it rather than trusting this comment). Back off a coin
-  // radius so the whole disc stays inside, plus margin, and the ceiling lands at
-  // 0.094 m — leaving ~4 mm of headroom.
+  // The ceiling is set by the FRAME, not by taste — specifically by HOLD_SHOT at
+  // SCENE_FOV_DEG, because that is the framing the coin is actually lifted in.
+  // Its top edge crosses the plane z = 0 at y = 0.1643 m (asserted in
+  // tools/verify-pickup.mjs, which recomputes it rather than trusting this
+  // comment). Back off a coin radius so the whole disc stays inside, plus
+  // margin, and the ceiling lands at 0.150 m.
   //
-  // It used to be 0.032, set by READY_SHOT, and that was the throw's problem:
-  // 3 cm of world and 196 px of screen is not enough room to wind up and flick
-  // in. Against HOLD_SHOT the same construction gives 385 px.
+  // It has moved twice. It was 0.032 under READY_SHOT, and that was the throw's
+  // problem: 3 cm of world and 196 px of screen is not enough room to wind up
+  // and flick in. HOLD_SHOT took it to 0.094 / 385 px. The wider lens takes it
+  // to 0.150 / 401 px — MORE world and slightly more screen, because a wide
+  // angle fits more metres into the same pixels and the raised target spends
+  // that on height rather than on table.
   //
   // THE CEILING HAS AN UPPER BOUND AND IT IS NOT THE FRAME. player.js's lead-in
   // bridges the coin from wherever it was released up to the baked clip's
   // opening at 0.22 m, and needs at least minBridgeMetres() ~= 18.5 mm to
   // accelerate through. A ceiling above ~0.2015 m leaves no bridge and the clip
   // visibly snatches the coin. At 0.094 there is still ~11x that margin.
-  maxY: 0.094,
+  maxY: 0.150,
 };
 
 /** 0 at rest, 1 at full lift. */
@@ -193,7 +235,7 @@ export function cameraBasis(shot) {
  * @param {number} clientY  pointer y in CSS px (a PointerEvent's clientY)
  * @param {{top:number, height:number}} rect  the canvas's bounding rect
  * @param {object} [shot]   camera shot; defaults to READY_SHOT
- * @param {number} [fovDeg] vertical field of view; defaults to the scene's 30
+ * @param {number} [fovDeg] vertical field of view; defaults to SCENE_FOV_DEG
  * @returns {number} metres, always finite, always within [LIFT.minY, LIFT.maxY]
  *
  * TOTAL BY CONSTRUCTION. A pointer dragged far below the canvas eventually
@@ -203,7 +245,7 @@ export function cameraBasis(shot) {
  * too-low pointer position. Nothing here may hand back NaN — this feeds the
  * coin's transform, and one NaN would take coinRoot with it.
  */
-export function screenYToWorldY(clientY, rect, shot = READY_SHOT, fovDeg = 30) {
+export function screenYToWorldY(clientY, rect, shot = READY_SHOT, fovDeg = SCENE_FOV_DEG) {
   if (!rect || !(rect.height > 0) || !Number.isFinite(clientY)) return LIFT.minY;
   const { pos, yAxis, zAxis } = cameraBasis(shot);
   // NDC y: +1 at the TOP of the canvas, -1 at the bottom.
@@ -231,7 +273,7 @@ export function screenYToWorldY(clientY, rect, shot = READY_SHOT, fovDeg = 30) {
  *
  * @returns {number} clientY, or NaN if the point is behind the camera
  */
-export function worldYToScreenY(worldY, rect, shot = READY_SHOT, fovDeg = 30) {
+export function worldYToScreenY(worldY, rect, shot = READY_SHOT, fovDeg = SCENE_FOV_DEG) {
   if (!rect || !(rect.height > 0)) return NaN;
   const { pos, yAxis, zAxis } = cameraBasis(shot);
   const vx = 0 - pos[0], vy = worldY - pos[1], vz = 0 - pos[2];
@@ -293,7 +335,7 @@ export async function createScene(opts = {}) {
   const scene = new THREE.Scene();
   // Camera looks from the SOUTH (+Z) by default, so screen-right is +X = EAST
   // and away-from-camera is -Z = NORTH — the same compass the dial uses.
-  const camera = new THREE.PerspectiveCamera(30, 1.6, 0.01, 20);
+  const camera = new THREE.PerspectiveCamera(SCENE_FOV_DEG, 1.6, 0.01, 20);
 
   // --- environment (the single highest-impact piece for a metal coin) ------
   onProgress('hdr');
