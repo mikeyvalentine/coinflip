@@ -783,13 +783,49 @@ let bet={}; // { side, spins:{line,mode}, orientation }
 let shownStart='Heads';
 
 function save(){ try{ localStorage.setItem('coinflip', JSON.stringify(player)); }catch{} }
-function load(){ try{ return JSON.parse(localStorage.getItem('coinflip')); }catch{ return null; } }
+// SANITISE AT THE DOOR. localStorage is not trusted input: it survives across
+// versions, it can be hand-edited, and a partial write can leave valid JSON with
+// nonsense in it. `{"balance":"lots"}` parses fine, and a string balance passes
+// canFlip() — because `"lots" <= 0` is false — then settles to NaN, at which
+// point canFlip() AND canClean() are both false and the player is stuck
+// permanently with no route back. Measured: one flip from a corrupt save is all
+// it takes. Coercing here means every downstream money rule can assume a finite
+// non-negative integer, which is what they were all written against anyway.
+function money(v){
+  const n = Math.floor(Number(v));
+  if(!Number.isFinite(n) || n <= 0) return 0;
+  // Capped at MAX_SAFE_INTEGER, and not arbitrarily: above it integer
+  // arithmetic stops being exact, so B would silently stop being countable.
+  // A restored 1e308 is finite and passes every other check, then meets the
+  // Edge's 499x and becomes Infinity, and the next arithmetic makes it NaN —
+  // the same dead end by a longer road.
+  return Math.min(n, Number.MAX_SAFE_INTEGER);
+}
+function load(){
+  try{
+    const raw = JSON.parse(localStorage.getItem('coinflip'));
+    if(!raw || typeof raw !== 'object') return null;
+    return {
+      balance: money(raw.balance),
+      bank: money(raw.bank),
+      history: Array.isArray(raw.history) ? raw.history : [],
+    };
+  }catch{ return null; }
+}
 const $=s=>document.querySelector(s);
 
 // ---- refresh / coin ------------------------------------------------------
 // you choose the amount; the cap is whatever sits above the floor
 function bankMax(){ return Math.max(0, Math.round(player.balance) - WALLET_FLOOR); }
-function canBank(){ return bankMax()>0 && timerRunning(); }   // only during cooldown
+// ALSO refused while a flip is in flight. The design's own rule is that the
+// stake is frozen once the flip goes live, but only canFlip() enforced it, and
+// only against the timer — so the moment a cooldown began during a reveal
+// (three seconds of animation, and the debug button can do it today) banking
+// re-opened mid-settlement. doFlip captures the stake, awaits the reveal, then
+// re-reads the balance: bank 500 of a 1000 wallet during that window and the
+// settlement computes 500 - 1000 + returned, landing the player on a NEGATIVE
+// wallet with 500 destroyed. Measured before this line existed.
+function canBank(){ return bankMax()>0 && timerRunning() && !flipping; }
 function doBank(){
   // enforce the gate in LOGIC, not just CSS — pointer-events:none stops a mouse
   // click but not Enter in the field, so the rule has to hold here too
@@ -1574,7 +1610,9 @@ function resolveSpins(flip){
 // the whole wallet always rides, so all that's needed is a side call
 function canFlip(){
   if(timerRunning()) return false;     // stake is frozen once the flip goes live
-  if(player.balance<=0) return false;
+  // Not `<= 0`: NaN fails every comparison, so a corrupted balance sailed
+  // straight through this guard and staked garbage.
+  if(!Number.isFinite(player.balance) || player.balance<=0) return false;
   if(!bet.side) return false;
   // an unwinnable RIDE is not a bet, it is a donation
   if(betMode==='ride' && rideMult()===0) return false;
@@ -1588,7 +1626,15 @@ let flipping=false;
 async function doFlip(){
   if(flipping) return;
   if(!canFlip()) return;                 // locked until a bet is placed
+  // try/FINALLY, not try/catch: the lock MUST come off even when the flip dies
+  // half way. Without it a single throw anywhere in the reveal — a missing
+  // element, a render error — left `flipping` true forever, and every later
+  // flip became a silent no-op while the coin still looked enabled. The player
+  // keeps their money, so the cleaning game will not offer itself either: a
+  // funded account that can never play again. The error is still rethrown,
+  // because swallowing it would hide the actual fault.
   flipping=true;
+  try{
   const stake=player.balance;          // no stake field — the wallet is the bet
   const p=portions();
 
@@ -1599,7 +1645,13 @@ async function doFlip(){
   const returned = await revealResults(flip, stake, p);   // staged, step by step
   const lines=p.map(x=>`${x.key} ${fmtMult(x.mult)}× [${winOf(x,flip)?'WIN':'LOSS'}]`);
   const totalRisk=stake;                                  // entered amount IS the risk
-  const startBalance=player.balance;
+  // The balance AS IT WAS WHEN THE FLIP WENT LIVE, not as it is now. This used
+  // to re-read player.balance after the reveal had been awaited, so anything
+  // that moved money during those three seconds was silently subtracted twice —
+  // once by the mover and once here. Belt and braces with the canBank() gate
+  // above: that stops the only known mover, this makes the settlement
+  // self-consistent whatever else is added later.
+  const startBalance=stake;
   const endBalance=Math.round(startBalance-totalRisk+returned);
   player.history.push({ startBalance, endBalance, totalStaked:totalRisk, bustedYesterday:false,
     bets:p.map(x=>({stake:x.w*stake, payoutMultiple:x.mult, kind:x.key, won:winOf(x,flip)})) });
@@ -1609,7 +1661,7 @@ async function doFlip(){
   // with the whole wallet riding, a loss must drop straight to the broke screen or
   // the coin just locks at 0 with no way to carry on.
   await refresh(player.balance>0 ? {keep:true} : undefined);
-  flipping=false;
+  } finally { flipping=false; }
 }
 // ---- busker mode: the clean pays out ---------------------------------------
 // The old Broke Flip could pay 0, which cost the player a second day for the
@@ -1621,7 +1673,10 @@ async function cleanPayout(){
   if(flipping) return;
   if(!clean || !clean.done) return;
   if(!canClean()) return;              // the gate holds in LOGIC, not just CSS
+  // Same reasoning as doFlip, and it matters MORE here: this is the only route
+  // back from 0 B, so a stuck lock is not an inconvenience, it is a dead account.
   flipping=true;
+  try{
 
   // Into the WALLET, never the bank. Banking is a separate, deliberate act, and
   // money that arrived straight in the bank could never be risked.
@@ -1634,7 +1689,7 @@ async function cleanPayout(){
   res.textContent='+'+paid; res.style.color='#1a9e3f';
 
   await refresh();                     // paid > 0 always, so this returns to the board
-  flipping=false;
+  } finally { flipping=false; }
 }
 function renderResult(flip, sb, eb, lines, stake){
   const block=document.createElement('div');
@@ -1655,7 +1710,14 @@ $('#debugReset').addEventListener('click', async ()=>{
 // flip. Cleaning IS the daily flip: it pushes a history entry and spends the
 // day, which is what stops it being farmed. Without that, busting would be free
 // and the one-flip-a-day rule would stop meaning anything.
-function canClean(){ return player.balance<=0 && !timerRunning(); }
+// THE SAFETY NET HAS TO CATCH A BROKEN WALLET TOO, not only an empty one.
+// `NaN <= 0` is false, so a corrupted balance used to slip past this and leave
+// the player with no way back in at all. Anything that is not a usable positive
+// number counts as broke, because the alternative is a dead account.
+function canClean(){
+  const b = player.balance;
+  return (!Number.isFinite(b) || b<=0) && !timerRunning();
+}
 function updateBrokeLock(){
   const c=$('#cleanCoin');
   if(c) c.classList.toggle('locked', !canClean());

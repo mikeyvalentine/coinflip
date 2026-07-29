@@ -233,6 +233,13 @@ async function flip(power = 0.5, fromPose = null) {
   // until the player actually starts their next throw.
   orientArrow.hide();
   const outcome = pending;
+  // try/FINALLY around everything that follows. `locked` is set above and was
+  // only cleared on the success path, so any throw inside the flip — a clip that
+  // fails to decode, a lost WebGL context — left the page locked FOREVER. Worse
+  // than the same bug in the 2D game: the reset button is only revealed on
+  // success, so there was no visible way out at all and the coin simply stopped
+  // responding. The error is still rethrown; swallowing it would hide the fault.
+  try {
   const report = await flipper.playFlip(outcome, {
     ...playOpts(),
     // Where the coin was let go. The lead-in bridges from HERE up to the clip's
@@ -276,6 +283,19 @@ async function flip(power = 0.5, fromPose = null) {
   // Auto-arming swept the result away in the same breath as showing it.
   $('#again').style.display = '';
   return report;
+  } catch (err) {
+    // Surface it and hand the player the way out, rather than leaving a dead
+    // canvas. The unlock lives HERE and not in a finally: after a SUCCESSFUL
+    // flip the coin is meant to stay locked, sitting exactly where it landed
+    // with its reading beside it, until the player presses reset. Unlocking on
+    // both paths would let them grab the settled coin and lose the result.
+    console.error('[flip3d] the flip failed', err);
+    $('#out').innerHTML = '<b style="color:#c00">the flip failed</b> — ' + String(err && err.message || err);
+    $('#again').style.display = '';
+    locked = false;
+    canvas.classList.remove('locked');
+    throw err;
+  }
 }
 
 // --- the gesture -----------------------------------------------------------
