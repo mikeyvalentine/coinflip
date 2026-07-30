@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COINFLIP</title>
+<script>
+  // A hidden preview pane never fires rAF. ?raf=timer swaps in a timer-driven
+  // one so playback can be driven headlessly.
+  if (new URLSearchParams(location.search).get('raf') === 'timer') {
+    window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
+    window.cancelAnimationFrame = (id) => clearTimeout(id);
+  }
+</script>
+<style>
+  body { font-family: "Google Sans", "Google Sans Text", system-ui, -apple-system, sans-serif;
+         margin:0; padding:60px 24px 40px; color:#111;
+         --field-x:260px; --sel:#2563eb; --sel-soft:#9ec1f5; }
+  #wrap { max-width:880px; margin:0 auto; }
+
+  #topbar { position:absolute; top:0; left:0; right:0; margin:8px;
+            display:flex; justify-content:space-between; align-items:flex-start;
+            flex-wrap:wrap; gap:4px 16px; }
+  #money { font-weight:700; }
+
+  /* THE STAGE IS A SIBLING OF #form, NEVER AN ANCESTOR OF A ROW.
+     revealResults() positions #stepTotal from the LIVE offsetTop of each row and
+     the offsetLeft of the Total row's .row-amt, both resolved against #form. A
+     canvas anywhere between #form and its rows — or any ancestor gaining
+     position/transform/filter/perspective/contain — silently re-bases every one
+     of those offsets. It looks perfect at rest and lands the sliding total in
+     the wrong place the instant it moves, which is the kind of bug that survives
+     every static check. Keeping the stage outside #form makes that structurally
+     impossible rather than merely avoided. */
+  #stage { position:relative; width:100%; border-radius:2px; overflow:hidden;
+           background:#111; margin-bottom:18px; }
+  #c { display:block; width:100%; height:auto; cursor:grab; touch-action:none; }
+  #c.locked { cursor:default; }
+  #c.charging { cursor:grabbing; }
+  #stage.hidden { display:none; }
+
+  /* No CSS transitions on the meter: a hidden pane never advances one, so
+     getComputedStyle would report the start value and any measurement taken off
+     it would be a lie. grab.js writes every visual directly. */
+  #meter { position:absolute; right:14px; bottom:14px; width:74px;
+           display:flex; flex-direction:column; align-items:center; gap:6px;
+           user-select:none; pointer-events:none; }
+  #meter .pm-track { position:relative; width:12px; height:128px; border-radius:6px;
+                     background:rgba(255,255,255,.16); overflow:hidden; }
+  #meter .pm-fill { position:absolute; left:0; bottom:0; width:100%; height:0%;
+                    background:#6b7280; border-radius:6px; }
+  #meter .pm-min { position:absolute; left:0; width:100%; height:1px; background:rgba(255,255,255,.55); }
+
+  /* THE FALLBACK COIN. Shown only when WebGL is unavailable — the betting game
+     must stay fully playable, not merely report why it is not. */
+  #flatStage { display:none; margin-bottom:18px; }
+  #flatStage.on { display:block; }
+  #coinVis { perspective:400px; cursor:pointer; width:64px; transition:opacity .15s; }
+  #coinVis.locked { opacity:.35; cursor:default; }
+  .coin { width:64px; height:64px; position:relative; transform-style:preserve-3d; transition:transform .12s linear; }
+  .coin.tails { transform:rotateY(180deg); }
+  .coin .face { position:absolute; width:64px; height:64px; border-radius:50%;
+                border:2px solid black; display:flex; align-items:center; justify-content:center;
+                backface-visibility:hidden; -webkit-backface-visibility:hidden; font-size:12px; background:white; }
+  .coin .back { transform:rotateY(180deg); }
+
+  #bar { display:flex; justify-content:space-between; align-items:baseline; gap:16px; margin-bottom:18px; }
+  #shown { color:#9a9a9a; }
+  #shown b { color:#111; font-weight:700; }
+  #spinCounter { font-weight:700; font-variant-numeric:tabular-nums; }
+  #again { font:inherit; color:#9a9a9a; background:none; border:1px solid #ddd; padding:4px 10px; cursor:pointer; }
+  #again:hover { color:black; border-color:black; }
+
+  #form { display:block; position:relative; }
+  #grid { display:grid; grid-template-columns:auto 1fr auto; row-gap:22px; column-gap:16px; align-items:start; }
+  .dot { width:14px; height:14px; border-radius:50%; border:2px solid #ccc; background:#ccc;
+         padding:0; margin-top:4px; transition:transform .1s, background .15s, border-color .15s;
+         cursor:default; align-self:start; }
+  .dot.current { background:black; border-color:black; }
+  .dot.clickable { cursor:pointer; }
+  .dot.clickable:hover { transform:scale(1.3); }
+  .dot.hidden { visibility:hidden; }
+  .row-label { font-weight:700; }
+  .row-choices { margin-top:4px; }
+  .row-mult { font-weight:700; text-align:right; color:#9a9a9a; margin-top:4px; }
+  .aspect-cell.locked { color:#9a9a9a; }
+  .aspect-cell.hidden { visibility:hidden; }
+  .row-mult.hidden { visibility:hidden; }
+  .grid-divider { grid-column:1 / -1; border-top:1px solid #ccc; margin-top:6px; }
+  .total-mult { color:black; }
+  .total-content { font-weight:700; }
+  .field-row { display:grid; grid-template-columns:var(--field-x) auto; align-items:start; }
+  .row-amt { color:#9a9a9a; white-space:nowrap; font-variant-numeric:tabular-nums; margin-top:4px; }
+  .total-content .row-amt { color:black; margin-top:0; }
+
+  #brokeScreen { margin-top:10px; }
+  .broke-bar { display:flex; align-items:center; gap:16px; }
+  .broke-label { font-weight:700; }
+  #cleanCoin { touch-action:none; cursor:grab; display:block; margin-top:20px;
+               width:min(72vw, 260px); height:auto; transition:opacity .15s; }
+  #cleanCoin.scrubbing { cursor:grabbing; }
+  #cleanCoin.locked { opacity:.35; cursor:default; }
+  #brokeResult { font-weight:700; font-size:18px; min-width:36px; }
+
+  #dial .quad { transition:transform .28s, fill .28s; transform-origin:80px 80px; }
+  #dial { touch-action:none; user-select:none; }
+  #dial-arrows [data-arrow] { transform-box:view-box; transform-origin:0 0;
+    transition:transform .3s cubic-bezier(.22,.9,.28,1); }
+
+  .opt { color:#9a9a9a; cursor:pointer; margin-right:14px; display:inline-block;
+         transition:color .12s, opacity .2s, transform .25s; }
+  .opt:hover { color:black; }
+  .opt.on { color:var(--sel); }
+  .opt.dead { opacity:.25; pointer-events:none; }
+  .txtfield { color:#9a9a9a; }
+  .txtfield input { font:inherit; font-weight:400; border:none; border-bottom:1px solid #ccc;
+                    outline:none; width:70px; }
+  .txtfield input:focus { border-color:black; }
+
+  .opt.res-win  { color:#1a9e3f !important; opacity:1 !important; transform:scale(1.35); transform-origin:left center; }
+  .opt.res-loss { color:#d12d2d !important; opacity:1 !important; }
+  .opt.res-edge { color:#8b4ad6 !important; opacity:1 !important; transform:scale(1.35); transform-origin:left center; }
+  #dial .quad.res-win  { fill:#1a9e3f; transform:scale(1.18); }
+  #dial .quad.res-loss { fill:#d12d2d; }
+  .row-mult.res-win  { color:#1a9e3f; }
+  .row-mult.res-loss { color:#d12d2d; }
+  .row-mult.res-edge { color:#8b4ad6; }
+  #stepTotal { position:absolute; text-align:left; white-space:nowrap;
+               font-weight:700; font-size:22px; line-height:24px; visibility:hidden;
+               font-variant-numeric:tabular-nums; pointer-events:none; transform-origin:left center;
+               transition:top .5s cubic-bezier(.22,.9,.28,1), left .5s cubic-bezier(.22,.9,.28,1), opacity .3s; }
+  .row-amt.amt-hidden { visibility:hidden; }
+
+  .spin-entry { display:inline-flex; align-items:center; gap:14px; }
+  #lineWrap { display:inline-block; transform-origin:left center; transition:transform .25s; }
+  #lineWrap.res-win { transform:scale(1.35); }
+  #lineWrap.res-win input  { color:#1a9e3f; border-color:#1a9e3f; }
+  #lineWrap.res-loss input { color:#d12d2d; border-color:#d12d2d; }
+  #spinLanded { visibility:hidden; min-width:46px; color:#1a9e3f; }
+
+  .mode-row { display:grid; grid-template-columns:var(--field-x) auto; align-items:baseline; }
+  .opt.mode { font-weight:700; letter-spacing:.04em; }
+  .mode-stat { color:#9a9a9a; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .aspect-cell.void { opacity:.25; pointer-events:none; }
+
+  #bankLine { font-weight:400; color:#9a9a9a; margin-top:2px; }
+  #bankCtl { margin-left:10px; white-space:nowrap; }
+  #bankInput { font:inherit; width:64px; border:none; border-bottom:1px solid #ccc;
+               outline:none; background:none; color:inherit; text-align:right; }
+  #bankInput:focus { border-color:black; }
+  #bankBtn { cursor:pointer; text-decoration:underline; margin-left:8px; }
+  #bankBtn:hover { color:black; }
+  #bankCtl.off { opacity:.35; pointer-events:none; }
+
+  #out { margin-top:14px; }
+  #status { color:#9a9a9a; margin-top:10px; font-size:14px; }
+  #debugBar { margin-top:50px; padding-top:16px; border-top:1px solid #eee; }
+  #debugBar button { font:inherit; color:#9a9a9a; background:none; border:1px solid #ddd;
+                     padding:4px 10px; cursor:pointer; }
+  #debugBar button:hover { color:black; border-color:black; }
+
+  /* NARROW SCREENS — additive only. The grid stays dot | content | amount at
+     every width and .field-row keeps splitting the content cell, because the
+     reveal's offsets are computed from exactly that structure. Stacking the
+     amount under the choices would look right at rest and put the sliding total
+     in the wrong place the moment it moved. */
+  @media (max-width: 560px) {
+    body { padding:16px 16px 40px; --field-x:168px; }
+    #topbar { position:static; margin:0 0 22px; }
+    #grid { column-gap:12px; row-gap:20px; }
+    #coinVis { width:80px; }
+    .coin, .coin .face { width:80px; height:80px; }
+    .opt { padding:8px 0; margin-right:18px; }
+    #bankBtn { display:inline-block; padding:8px 0; }
+    .spin-entry { flex-wrap:wrap; gap:8px 12px; }
+    #a-spread .mode-row { grid-template-columns:auto 1fr; column-gap:14px; }
+    #stepTotal { font-size:19px; line-height:21px; }
+    #debugBar { display:flex; flex-wrap:wrap; gap:8px; }
+    #out { overflow-x:auto; }
+  }
+  @media (max-width: 400px) {
+    body { padding:14px 14px 36px; --field-x:150px; }
+    #dial { width:142px; height:142px; }
+    #grid { column-gap:10px; }
+    .opt { margin-right:14px; }
+    #stepTotal { font-size:18px; line-height:20px; }
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+
+<div id="topbar">
+  <div id="money">
+    <div><span id="bal">0</span> ₿</div>
+    <div id="bankLine">banked <span id="bankAmt">0</span> ₿
+      <span id="bankCtl"><input type="number" id="bankInput" min="1" step="1"><span id="bankBtn">bank</span></span>
+    </div>
+  </div>
+  <div id="timerBar">Next flip in <b id="timer">00</b></div>
+</div>
+
+<!-- the flip. Sibling of #form, never an ancestor of a row — see the CSS note. -->
+<div id="stage"><canvas id="c"></canvas><div id="meter"></div><div id="orient"></div></div>
+
+<!-- WebGL-absent fallback: the same game, a flat coin. -->
+<div id="flatStage"><div id="coinVis"></div></div>
+
+<div id="bar">
+  <div id="shown"></div>
+  <div id="spinCounter">spin: 0.0</div>
+  <button id="again" style="display:none">reset</button>
+</div>
+
+<!-- BUSKER MODE: scrub a coin for a stake. No instructions — a filthy coin
+     invites rubbing and the payout counting up under the hand says the rest. -->
+<div id="brokeScreen" style="display:none">
+  <div class="broke-bar">
+    <span class="broke-label">0 ₿.</span>
+    <span id="brokeResult"></span>
+  </div>
+  <canvas id="cleanCoin" width="640" height="640"></canvas>
+</div>
+
+<div id="form" style="display:none">
+  <div id="stepTotal">0</div>
+  <div id="grid">
+
+    <button class="dot" data-idx="0"></button>
+    <div class="aspect-cell" id="a-side">
+      <div class="row-label">Side</div>
+      <div class="field-row">
+        <div class="row-choices" id="side-choices">
+          <span class="opt pick" data-val="Heads">Heads</span>
+          <span class="opt pick" data-val="Tails">Tails</span>
+          <span class="opt pick" data-val="Edge">Edge 🤯</span>
+        </div>
+        <span class="row-amt" id="amt-side"></span>
+      </div>
+    </div>
+    <div class="row-mult" id="m-side"></div>
+
+    <button class="dot hidden" data-idx="1"></button>
+    <div class="aspect-cell hidden" id="a-orient">
+      <div class="row-label">Orientation</div>
+      <div class="field-row">
+      <div class="row-choices" id="orient-choices">
+        <svg id="dial" width="160" height="160" viewBox="0 0 160 160" style="cursor:pointer; overflow:visible">
+          <circle cx="80" cy="80" r="70" fill="none" stroke="black"></circle>
+          <line x1="80" y1="10" x2="80" y2="150" stroke="black"></line>
+          <line x1="10" y1="80" x2="150" y2="80" stroke="black"></line>
+          <path class="quad" d="M80,80 L80,10 A70,70 0 0,1 150,80 Z" fill="transparent" data-quad="NE"></path>
+          <path class="quad" d="M80,80 L150,80 A70,70 0 0,1 80,150 Z" fill="transparent" data-quad="SE"></path>
+          <path class="quad" d="M80,80 L80,150 A70,70 0 0,1 10,80 Z" fill="transparent" data-quad="SW"></path>
+          <path class="quad" d="M80,80 L10,80 A70,70 0 0,1 80,10 Z" fill="transparent" data-quad="NW"></path>
+          <g id="dial-arrows" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" pointer-events="none">
+            <g data-arrow="NE" transform="translate(111.8,48.2) rotate(45)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <g data-arrow="SE" transform="translate(111.8,111.8) rotate(135)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <g data-arrow="SW" transform="translate(48.2,111.8) rotate(225)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <g data-arrow="NW" transform="translate(48.2,48.2) rotate(315)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <g id="dial-merged" style="display:none"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+          </g>
+        </svg>
+      </div>
+      <span class="row-amt" id="amt-orient"></span>
+      </div>
+    </div>
+    <div class="row-mult hidden" id="m-orient"></div>
+
+    <button class="dot hidden" data-idx="2"></button>
+    <div class="aspect-cell hidden" id="a-spins">
+      <div class="row-label">Spin <span style="font-weight:400;color:#9a9a9a">(<b id="spinRange">4–20</b>)</span></div>
+      <div class="field-row">
+        <div class="row-choices" id="spins-choices">
+          <span class="spin-entry">
+            <span class="txtfield" id="lineWrap"><input type="text" id="spinLine" placeholder="#" size="4"></span>
+            <span class="opt pick2" data-val="gt">higher</span>
+            <span class="opt pick2" data-val="lt">lower</span>
+            <span id="spinLanded"></span>
+          </span>
+        </div>
+        <span class="row-amt" id="amt-spins"></span>
+      </div>
+    </div>
+    <div class="row-mult hidden" id="m-spins"></div>
+
+    <div class="grid-divider"></div>
+
+    <div></div>
+    <div class="aspect-cell hidden" id="a-spread">
+      <div class="mode-row">
+        <span class="opt mode" data-mode="spread">SPREAD</span>
+        <span class="mode-stat" id="stat-spread"></span>
+      </div>
+      <div class="mode-row">
+        <span class="opt mode" data-mode="ride">RIDE</span>
+        <span class="mode-stat" id="stat-ride"></span>
+      </div>
+    </div>
+    <div class="row-mult hidden" id="m-spread"></div>
+
+    <div></div>
+    <div class="total-content">
+      <div class="field-row">
+        <span class="row-label">Total</span>
+        <span class="row-amt">₿ <span id="stake">0</span></span>
+      </div>
+    </div>
+    <div class="row-mult total-mult"><span id="finalX">×</span><span id="finalMult">0</span></div>
+
+  </div>
+</div>
+
+<div id="out"></div>
+<div id="status">loading…</div>
+
+<div id="debugBar">
+  <button id="debugReset">reset</button>
+  <button id="dbgTimerStart">start timer</button>
+  <button id="dbgTimerZero">timer 00</button>
+</div>
+
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+
+<script type="module">
+// ===========================================================================
+// COINFLIP — the betting game and the renderer, one page.
+//
+// The board is the preview's; the flip is the 3D renderer's. Neither is copied:
+// the outcome comes from flip3d/outcome.js and the pricing from game/bets.js, so
+// there is ONE draw and ONE set of odds in the project. The two builds each grew
+// their own copy of the outcome model and drifted until they disagreed about
+// what a quadrant was called — a bug that survived every green suite because
+// each side was internally consistent with itself. Sharing the modules is what
+// makes that impossible rather than merely unlikely.
+// ===========================================================================
+
+import { resolveFlip, sha, previewStartFace } from './flip3d/outcome.js';
+import { SPIN_VALUES, toRotations, spinLabel } from './game/units.js';
+import * as BETS from './game/bets.js';
+import * as WALLET from './game/wallet.js';
+import { createClean } from './minigame/clean.js';
+
+const $ = (s) => document.querySelector(s);
+const params = new URLSearchParams(location.search);
+
+// ---------------------------------------------------------------------------
+// THE DAILY GATE — a real one, finally.
+//
+// The preview deliberately never auto-started the cooldown so it could be played
+// freely, which meant the one-flip-a-day rule — the spine of the whole design —
+// had never actually run. Here it does: a flip or a clean sets nextFlipAt and it
+// PERSISTS, so a reload does not hand you another turn.
+//
+// ?day=0 shortens it to nothing for testing, and the debug bar can clear it.
+// Both are deliberate and obvious rather than a hidden bypass: a gate you cannot
+// turn off is a gate nobody can test.
+// ---------------------------------------------------------------------------
+const DAY_MS = params.get('day') === '0' ? 0 : 24 * 60 * 60 * 1000;
+
+let player = WALLET.loadPlayer(localStorage);
+let day = player.history.length;
+let bet = {};
+let betMode = 'spread';
+let shownStart = 'Heads';
+let pending = null;            // the drawn outcome, face already shown
+let flipping = false;          // the in-flight lock
+let renderer = null;           // { kind:'3d'|'flat', ... } — set during boot
+
+const save = () => WALLET.savePlayer(localStorage, player);
+const timerRunning = () => Date.now() < player.nextFlipAt;
+function fmtTimer() {
+  if (!timerRunning()) return '00';
+  const s = Math.max(0, Math.ceil((player.nextFlipAt - Date.now()) / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${String(m).padStart(2, '0')}m`
+    : `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+/** Spend the day. One place, so a flip and a clean cannot drift apart. */
+function spendDay() { player.nextFlipAt = Date.now() + DAY_MS; }
+
+// ---------------------------------------------------------------------------
+// BOOT: the renderer is OPTIONAL.
+//
+// A merged game that dies without WebGL is a game that does not load for a real
+// slice of players — Firefox's privacy.resistFingerprinting disables it, as do
+// several blocker extensions. The betting game does not need a GPU, so it must
+// not be held hostage by one: on failure the flat coin takes over and everything
+// else — bets, pricing, the reveal, the economy — runs untouched.
+// ---------------------------------------------------------------------------
+$('#status').textContent = 'loading…';
+
+let library = null;
+let beats = null;
+try {
+  const { loadClipLibrary } = await import('./flip3d/library.js');
+  library = await loadClipLibrary({ base: params.get('clips') ?? './bake/out/' });
+  try {
+    const r = await fetch((params.get('clips') ?? './bake/out/') + 'beats.json');
+    if (r.ok) beats = await r.json();
+  } catch { /* the frame-counting fallback is correct, just weldier */ }
+} catch (err) {
+  console.warn('[coinflip] no baked clips; procedural fallback', err.message);
+}
+
+async function boot3D() {
+  if (params.get('flat') === '1') throw new Error('flat forced');
+  const { createScene, LIFT, worldYToScreenY, HOLD_SHOT, HOLD_TRANSITION_MS } = await import('./flip3d/scene.js');
+  const { createFlipper } = await import('./flip3d/player.js');
+  const { createMotionBlur, QUALITY } = await import('./flip3d/blur.js');
+  const { createMeterView } = await import('./flip3d/charge.js');
+  const { createGrab } = await import('./flip3d/grab.js');
+  const { createOrientArrow } = await import('./flip3d/orientArrow.js');
+  const { playDrop } = await import('./flip3d/drop.js');
+
+  const canvas = $('#c');
+  const scene = await createScene({
+    canvas,
+    onProgress: (s) => { $('#status').textContent = s === 'ready' ? '' : 'loading ' + s + '…'; },
+  });
+  const blurQ = QUALITY[params.get('blur')] ? params.get('blur') : 'medium';
+  const blur = createMotionBlur(scene, { quality: blurQ });
+  scene.setDrawHook(blur.draw);
+
+  const flipper = createFlipper(scene, {
+    library, blur, beats,
+    onSpin: (rot) => { $('#spinCounter').textContent = 'spin: ' + rot.toFixed(1); },
+    onPhase: (p) => { canvas.dataset.phase = p; },
+  });
+  const meter = createMeterView($('#meter'));
+  meter.reset();
+  const orientArrow = createOrientArrow($('#orient'));
+
+  const liftBand = () => {
+    const rect = canvas.getBoundingClientRect();
+    const top = worldYToScreenY(LIFT.maxY, rect, HOLD_SHOT);
+    const rest = worldYToScreenY(LIFT.minY, rect, HOLD_SHOT);
+    return { top, rest, travel: Math.max(rest - top, 1) };
+  };
+
+  let dropping = false;
+  const grab = createGrab(canvas, {
+    canStart: () => canFlip() && !flipper.busy && !dropping,
+    clampY: (y) => { const b = liftBand(); return Math.min(Math.max(y, b.top), b.rest); },
+    travelPx: () => liftBand().travel,
+    toWorldY: (y) => scene.screenYToWorldY(y),
+    minPower: 0.12,
+    settleMs: HOLD_TRANSITION_MS,
+    onGrab: () => { canvas.classList.add('charging'); scene.enterHoldFraming(); },
+    onChange: (p, info) => {
+      meter.set(p);
+      if (info.held && info.worldY != null) scene.setHeldPose(info.worldY);
+    },
+    onRearm: () => { meter.flash('rewind', '#9a9a9a'); },
+    onThrow: (p) => {
+      canvas.classList.remove('charging');
+      meter.reset();
+      scene.cancelFraming();
+      const fromPose = {
+        pos: scene.coinRoot.position.toArray(),
+        quat: scene.coinRoot.quaternion.toArray(),
+      };
+      scene.endHold();
+      doFlip({ power: p, fromPose });
+    },
+    onCancel: async (reason) => {
+      canvas.classList.remove('charging');
+      meter.set(0);
+      canvas.dataset.lastCancel = reason;
+      scene.exitHoldFraming();
+      if (dropping) return;
+      dropping = true;
+      try {
+        await playDrop(scene, {
+          fromY: scene.heldY,
+          face: pending ? pending.startFace : scene.currentFace(),
+          seed: 'drop::' + Date.now(),
+        });
+      } catch (err) {
+        console.warn('[coinflip] drop failed, parking the coin', err);
+        scene.endHold();
+        if (pending) await flipper.ready(pending.startFace, { animate: false });
+      } finally { dropping = false; }
+    },
+  });
+  scene.onFrame(() => grab.tick());
+  window.addEventListener('resize', () => {
+    orientArrow.reposition({ rect: canvas.getBoundingClientRect(), shot: scene.shot });
+  });
+
+  return {
+    kind: '3d', scene, flipper, grab, meter, orientArrow, canvas,
+    async ready(face) { await flipper.ready(face); },
+    async play(outcome, opts) {
+      const report = await flipper.playFlip(outcome, {
+        forceProcedural: params.get('procedural') === '1',
+        slowmo: params.get('slowmo') !== '0',
+        seed: 'flip::' + Date.now(),
+        ...opts,
+      });
+      orientArrow.show(report.played.landedOrientationDeg, {
+        shot: scene.shot, rect: canvas.getBoundingClientRect(),
+      });
+      return report;
+    },
+    clearReading() { orientArrow.hide(); },
+    setLocked(v) { canvas.classList.toggle('locked', v); },
+  };
+}
+
+/**
+ * The flat coin. Not a stub — the full betting game runs on it.
+ * One face swap per half-flip, the counter ticking 0.5 each time.
+ */
+function bootFlat() {
+  $('#stage').classList.add('hidden');
+  $('#flatStage').classList.add('on');
+  const render = (face) => {
+    $('#coinVis').innerHTML =
+      `<div class="coin${face === 'Tails' ? ' tails' : ''}">`
+      + '<div class="face front">HEADS</div><div class="face back">TAILS</div></div>';
+  };
+  $('#coinVis').addEventListener('click', () => doFlip({ power: 0.5 }));
+  return {
+    kind: 'flat',
+    async ready(face) { render(face); $('#spinCounter').textContent = 'spin: 0.0'; },
+    play(outcome) {
+      return new Promise((resolve) => {
+        // A rim landing has no rotation count in the shared draw, so there is
+        // nothing to animate towards — show the start face and stop rather than
+        // inventing a tumble the physics never produced.
+        const half = outcome.edge ? 0 : outcome.spins;
+        let heads = outcome.startFace === 'Heads';
+        render(outcome.startFace);
+        let i = 0;
+        const delayAt = (k) => 60 + Math.pow(k / Math.max(half, 1), 3) * 260;
+        const step = () => {
+          const c = $('#coinVis .coin');
+          heads = !heads;
+          if (c) c.classList.toggle('tails', !heads);
+          i++;
+          $('#spinCounter').textContent = 'spin: ' + (i / 2).toFixed(1);
+          if (i >= half) {
+            if (c) c.classList.toggle('tails', outcome.side !== 'Heads');
+            $('#spinCounter').textContent = 'spin: ' + (half / 2).toFixed(1);
+            setTimeout(() => resolve({ played: { landedOrientationDeg: outcome.orientationDeg } }), 300);
+            return;
+          }
+          setTimeout(step, delayAt(i));
+        };
+        if (half > 0) setTimeout(step, delayAt(0));
+        else setTimeout(() => resolve({ played: { landedOrientationDeg: null } }), 300);
+      });
+    },
+    clearReading() {},
+    setLocked(v) { $('#coinVis').classList.toggle('locked', v); },
+  };
+}
+
+try {
+  renderer = await boot3D();
+  $('#status').textContent = library ? `${library.stats.clips} baked clips ready` : 'procedural fallback';
+} catch (err) {
+  const webgl = /webgl|context/i.test(String(err && err.message));
+  renderer = bootFlat();
+  $('#status').innerHTML = webgl
+    ? '<b>WebGL is disabled in this browser.</b> The game is fully playable on the flat coin. '
+      + 'Firefox: <code>webgl.disabled=false</code> in <code>about:config</code>; '
+      + '<code>privacy.resistFingerprinting</code> also disables it.'
+    : 'flat coin — ' + String(err && err.message || err);
+  console.warn('[coinflip] renderer unavailable, using the flat coin', err);
+}
+
+// --- money readouts --------------------------------------------------------
+function canBank() {
+  return WALLET.canBank(player, { timerRunning: timerRunning(), inFlight: flipping });
+}
+function canFlip() {
+  return WALLET.canFlip(player, {
+    timerRunning: timerRunning(), inFlight: flipping, hasBet: !!bet.side,
+    rideDead: betMode === 'ride' && BETS.rideMult(bet, shownStart) === 0,
+  });
+}
+function canClean() {
+  return WALLET.canClean(player, { timerRunning: timerRunning(), inFlight: flipping });
+}
+
+function doBank() {
+  // The gate holds in LOGIC, not only in CSS: pointer-events:none stops a mouse
+  // click but not Enter in the field, and this moves real money.
+  if (!canBank()) return;
+  const next = WALLET.applyBank(player, parseFloat($('#bankInput').value));
+  if (!next.moved) return;
+  player.balance = next.balance; player.bank = next.bank; save();
+  $('#bankInput').value = '';
+  syncMoney(); updateFinal();
+}
+
+function syncMoney() {
+  $('#bal').textContent = Math.round(player.balance).toLocaleString('en-US');
+  $('#bankAmt').textContent = Math.round(player.bank).toLocaleString('en-US');
+  const max = WALLET.bankMax(player);
+  $('#bankInput').max = max;
+  $('#bankInput').placeholder = max;
+  $('#bankCtl').classList.toggle('off', !canBank());
+  $('#stake').textContent = Math.round(player.balance).toLocaleString('en-US');
+}
+
+// --- the board -------------------------------------------------------------
+const dotOf = (i) => document.querySelector('.dot[data-idx="' + i + '"]');
+const isChosen = (i) => (i === 0 ? !!bet.side : i === 1 ? !!bet.orientation : i === 2 ? !!bet.spins : false);
+
+function updateRail(cur) {
+  document.querySelectorAll('.dot').forEach((d) => {
+    const i = +d.dataset.idx;
+    d.classList.remove('current', 'clickable');
+    if (i === cur) d.classList.add('current');
+    else if (isChosen(i)) d.classList.add('clickable');
+  });
+}
+function unlockChoices(s) {
+  const a = $('#a-' + s);
+  a.classList.remove('locked');
+  a.querySelectorAll('.opt').forEach((o) => o.classList.remove('on', 'dead'));
+  $('#m-' + s).textContent = '';
+}
+function lockAspect(s, mult) {
+  $('#a-' + s).classList.add('locked');
+  $('#m-' + s).classList.remove('hidden');
+  $('#m-' + s).textContent = BETS.fmtMult(mult) + '×';
+}
+function revealAspect(s) {
+  $('#a-' + s).classList.remove('hidden');
+  if (s === 'spread') return;
+  dotOf(s === 'orient' ? 1 : s === 'spins' ? 2 : 0)?.classList.remove('hidden');
+}
+function hideAspect(s) {
+  $('#a-' + s).classList.add('hidden');
+  $('#m-' + s).classList.add('hidden');
+  if (s === 'spread') return;
+  dotOf(s === 'orient' ? 1 : s === 'spins' ? 2 : 0)?.classList.add('hidden');
+}
+function selectOne(group, chosen) {
+  document.querySelectorAll(group + ' .opt').forEach((o) => o.classList.toggle('on', o === chosen));
+}
+
+document.querySelectorAll('#side-choices .pick').forEach((b) => {
+  b.addEventListener('click', () => {
+    if (flipping) return;
+    bet.side = b.dataset.val;
+    selectOne('#side-choices', b);
+    lockAspect('side', BETS.sideMult(bet));
+    revealAspect('orient'); revealAspect('spins'); revealAspect('spread');
+    const allIn = bet.side === 'Edge';
+    if (allIn) {
+      bet.orientation = undefined; bet.spins = undefined;
+      clearDial(); unlockChoices('orient'); $('#spinLine').value = ''; syncSpins();
+    }
+    ['orient', 'spins', 'spread'].forEach((k) => $('#a-' + k).classList.toggle('void', allIn));
+    updateRail(1); updateFinal();
+  });
+});
+
+function updateDeadSides(line) {
+  document.querySelectorAll('#spins-choices .pick2').forEach((b) => {
+    const dead = !isNaN(line) && BETS.spinMultFor(line, b.dataset.val) === 0;
+    b.classList.toggle('dead', dead);
+    if (dead) b.classList.remove('on');
+  });
+}
+const spinMode = () => document.querySelector('#spins-choices .pick2.on')?.dataset.val || 'exact';
+function syncSpins() {
+  if ($('#a-spins').classList.contains('void')) { bet.spins = undefined; return; }
+  const raw = $('#spinLine').value.trim();
+  if (!BETS.validLine(raw)) {
+    bet.spins = undefined; updateDeadSides(NaN);
+    $('#a-spins').classList.remove('locked'); $('#m-spins').textContent = '';
+    updateRail(2); updateFinal(); return;
+  }
+  const line = BETS.lineValue(raw);
+  updateDeadSides(line);
+  bet.spins = { line, mode: spinMode() };
+  lockAspect('spins', BETS.spinMultFor(line, bet.spins.mode));
+  updateRail(2); updateFinal();
+}
+document.querySelectorAll('#spins-choices .pick2').forEach((b) => {
+  b.addEventListener('click', () => {
+    if (b.classList.contains('dead') || flipping) return;
+    const wasOn = b.classList.contains('on');
+    document.querySelectorAll('#spins-choices .pick2').forEach((o) => o.classList.remove('on'));
+    if (!wasOn) b.classList.add('on');
+    syncSpins();
+  });
+});
+$('#spinLine').addEventListener('input', syncSpins);
+$('#spinLine').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  if (bet.spins) $('#spinLine').blur();
+});
+
+document.querySelectorAll('#a-spread .mode').forEach((b) => {
+  b.addEventListener('click', () => {
+    if ($('#a-spread').classList.contains('void') || b.classList.contains('dead') || flipping) return;
+    betMode = b.dataset.mode;
+    updateFinal();
+  });
+});
+
+// --- the dial --------------------------------------------------------------
+let painting = null;
+function setQuad(d, on) {
+  const sel = BETS.orientSel(bet).slice();
+  const at = sel.indexOf(d);
+  if (on && at < 0) sel.push(d);
+  else if (!on && at >= 0) sel.splice(at, 1);
+  else return;
+  bet.orientation = sel.length ? sel : undefined;
+  renderDial(); updateOrientMults();
+}
+document.querySelectorAll('#dial .quad').forEach((p) => {
+  const d = p.dataset.quad;
+  p.addEventListener('pointerdown', (e) => {
+    if ($('#a-orient').classList.contains('void') || flipping) return;
+    e.preventDefault();
+    painting = !BETS.orientSel(bet).includes(d);
+    setQuad(d, painting);
+  });
+  p.addEventListener('pointerenter', () => {
+    if (painting === null || $('#a-orient').classList.contains('void')) return;
+    setQuad(d, painting);
+  });
+});
+window.addEventListener('pointerup', () => { painting = null; });
+window.addEventListener('pointercancel', () => { painting = null; });
+
+const MERGE = {
+  NENW: { deg: 0, x: 80, y: 35 }, NESE: { deg: 90, x: 125, y: 80 },
+  SESW: { deg: 180, x: 80, y: 125 }, NWSW: { deg: 270, x: 35, y: 80 },
+};
+function renderArrows(sel) {
+  const S = new Set(sel);
+  let merged = null; const hide = new Set();
+  const tryMerge = (a, b) => {
+    if (!(S.has(a) && S.has(b))) return false;
+    merged = MERGE[[a, b].sort().join('')]; hide.add(a); hide.add(b); return true;
+  };
+  if (sel.length === 2) tryMerge('NE', 'SE') || tryMerge('SE', 'SW') || tryMerge('SW', 'NW') || tryMerge('NW', 'NE');
+  else if (sel.length === 3) tryMerge('NE', 'SE') || tryMerge('NW', 'SW');
+  document.querySelectorAll('#dial-arrows [data-arrow]').forEach((g) => {
+    g.style.display = hide.has(g.dataset.arrow) ? 'none' : '';
+  });
+  const el = $('#dial-merged');
+  if (merged) {
+    el.setAttribute('transform', 'translate(' + merged.x + ',' + merged.y + ') rotate(' + merged.deg + ')');
+    el.style.display = '';
+  } else el.style.display = 'none';
+}
+function renderDial() {
+  const sel = BETS.orientSel(bet);
+  document.querySelectorAll('#dial .quad').forEach((p) => {
+    const on = sel.includes(p.dataset.quad);
+    p.setAttribute('fill', on ? '#9ec1f5' : 'transparent');
+    p.style.transform = on ? 'scale(1.12)' : 'scale(1)';
+  });
+  renderArrows(sel);
+}
+function clearDial() {
+  document.querySelectorAll('#dial .quad').forEach((p) => {
+    p.setAttribute('fill', 'transparent'); p.style.transform = 'scale(1)';
+  });
+  renderArrows([]);
+}
+function updateOrientMults() {
+  const k = BETS.orientSel(bet).length;
+  if (k > 0) {
+    $('#a-orient').classList.add('locked');
+    $('#m-orient').classList.remove('hidden');
+    $('#m-orient').textContent = BETS.fmtMult(BETS.orientMult(bet)) + '×';
+  } else {
+    $('#a-orient').classList.remove('locked');
+    $('#m-orient').textContent = '';
+  }
+  updateFinal(); updateRail(1);
+}
+
+document.querySelectorAll('.dot').forEach((dot) => {
+  dot.addEventListener('click', () => {
+    const i = +dot.dataset.idx;
+    if (!isChosen(i) || flipping) return;
+    reviseFrom(i);
+  });
+});
+function reviseFrom(i) {
+  if (i <= 0) { bet.side = undefined; unlockChoices('side'); }
+  if (i <= 1) {
+    bet.orientation = undefined; clearDial();
+    if (bet.side) lockAspect('side', BETS.sideMult(bet));
+    if (i === 1) unlockChoices('orient'); else hideAspect('orient');
+  }
+  if (i <= 2) {
+    bet.spins = undefined; $('#spinLine').value = ''; updateDeadSides(NaN);
+    if (i === 2) unlockChoices('spins'); else hideAspect('spins');
+  }
+  if (i === 0) hideAspect('spread');
+  updateRail(i); updateFinal();
+}
+
+function syncAmounts(p) {
+  const stake = player.balance;
+  const by = Object.fromEntries(p.map((x) => [x.key, x.w * stake]));
+  [['side', '#amt-side'], ['orient', '#amt-orient'], ['spins', '#amt-spins']].forEach(([k, sel]) => {
+    const el = $(sel); if (!el) return;
+    el.textContent = (betMode === 'ride' || by[k] === undefined)
+      ? '' : '₿ ' + Math.round(by[k]).toLocaleString('en-US');
+  });
+}
+
+function updateFinal() {
+  const p = BETS.portions(bet, betMode);
+  syncAmounts(p);
+  const st = BETS.modeStats(bet, shownStart);
+  document.querySelectorAll('#a-spread .mode').forEach((el) => {
+    el.classList.toggle('on', el.dataset.mode === betMode);
+  });
+  const show = (sel, d) => {
+    const el = $(sel); if (!el) return;
+    el.textContent = d ? 'nothing ' + Math.round(d.nothing * 100) + '%   best '
+      + Math.round(d.best * player.balance).toLocaleString('en-US') + ' ₿' : '';
+  };
+  // A RIDE can be built that cannot possibly land: side IS spin parity, so
+  // calling Heads next to an odd-rotation line asks the coin to do two
+  // contradictory things. Half of all side + exact-spin pairings are dead this
+  // way. Grey it out rather than let someone spend their one daily flip on it.
+  const rideDead = !!st && st.ride.best === 0;
+  const rideEl = document.querySelector('#a-spread .mode[data-mode="ride"]');
+  if (rideEl) rideEl.classList.toggle('dead', rideDead);
+  if (rideDead && betMode === 'ride') betMode = 'spread';
+  show('#stat-spread', st && st.spread);
+  show('#stat-ride', st && st.ride);
+  $('#finalMult').textContent = p.length
+    ? BETS.fmtMult(betMode === 'ride' ? BETS.rideMult(bet, shownStart) : BETS.spreadK(bet)) : '0';
+  updateFlipLock();
+}
+function updateFlipLock() { if (renderer) renderer.setLocked(!canFlip()); }
+
+// --- the staged reveal -----------------------------------------------------
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const DRAMA = { mMin: 0.01, mMax: 31, durMin: 260, durMax: 1100, pulseMin: 0.04, pulseMax: 0.28 };
+function dramaOf(delta, stake) {
+  const m = stake > 0 ? Math.abs(delta) / stake : 0;
+  const lo = Math.log(DRAMA.mMin); const hi = Math.log(DRAMA.mMax);
+  const k = Math.min(1, Math.max(0, (Math.log(Math.max(m, DRAMA.mMin)) - lo) / (hi - lo)));
+  return {
+    ms: DRAMA.durMin + k * (DRAMA.durMax - DRAMA.durMin),
+    pulse: DRAMA.pulseMin + k * (DRAMA.pulseMax - DRAMA.pulseMin),
+    scale: 0.45 + k * 0.75,
+  };
+}
+const C_WIN = [26, 158, 63]; const C_LOSS = [209, 45, 45];
+const C_LEVEL = [154, 154, 154]; const C_EDGE = [139, 74, 214];
+function positionColour(value, stake, isEdge) {
+  if (!(stake > 0)) return '';
+  const t = (value - stake) / stake;
+  const s = Math.min(1, Math.abs(t));
+  const to = t >= 0 ? (isEdge ? C_EDGE : C_WIN) : C_LOSS;
+  return 'rgb(' + C_LEVEL.map((n, i) => Math.round(n + (to[i] - n) * s)).join(',') + ')';
+}
+function countUp(from, to, ms, pulse, stake, isEdge) {
+  return new Promise((res) => {
+    const el = $('#stepTotal');
+    const t0 = performance.now();
+    requestAnimationFrame(function step(now) {
+      const t = Math.min(1, (now - t0) / ms);
+      const e = 1 - Math.pow(1 - t, 3);
+      const v = from + (to - from) * e;
+      el.textContent = '₿ ' + Math.round(v).toLocaleString('en-US');
+      el.style.color = positionColour(v, stake, isEdge);
+      el.style.transform = 'scale(' + (1 + pulse * Math.sin(t * Math.PI)) + ')';
+      if (t < 1) requestAnimationFrame(step);
+      else { el.style.transform = 'scale(1)'; res(); }
+    });
+  });
+}
+const amtCell = (k) => (k === 'side' ? '#amt-side' : k === 'orient' ? '#amt-orient' : '#amt-spins');
+
+/**
+ * Animate the result. Returns what it ANIMATED to, which the caller compares
+ * against the authoritative settlement — the money itself comes from
+ * BETS.settleReturn(), not from here.
+ *
+ * The preview returned the money as a side effect of animating it, welding the
+ * amount a player is paid to a chain of awaited timeouts. That is fine until the
+ * animation throws, or is skipped, or a renderer replaces it — and then the
+ * payout is whatever the animation happened to reach.
+ */
+async function revealResults(flip, stake, p) {
+  const tot = $('#stepTotal');
+  let running = stake;
+  let alive = true;
+  tot.style.left = ($('#stake').closest('.row-amt').offsetLeft) + 'px';
+  tot.style.opacity = '0';
+  tot.style.visibility = 'visible';
+  tot.textContent = '₿ ' + Math.round(running).toLocaleString('en-US');
+  tot.style.color = positionColour(running, stake, flip.edge);
+
+  for (const x of p) {
+    const perBet = x.w * stake;
+    const row = x.key === 'side' ? '#a-side' : x.key === 'orient' ? '#a-orient' : '#a-spins';
+    const rowEl = $(row);
+    $(amtCell(x.key))?.classList.add('amt-hidden');
+
+    const won = BETS.winOf(x, bet, flip);
+    const delta = won ? perBet * (x.mult - 1) : -perBet;
+    const d = dramaOf(delta, stake);
+    const slide = Math.round(520 * d.scale); const gap = Math.round(160 * d.scale);
+    const tail = Math.round(320 * d.scale);
+
+    tot.style.transitionDuration = slide + 'ms, ' + slide + 'ms, 300ms';
+    tot.style.top = (rowEl.offsetTop) + 'px';
+    tot.style.opacity = '1';
+    await wait(slide);
+
+    if (x.key === 'side') {
+      const picked = document.querySelector('#side-choices .pick[data-val="' + bet.side + '"]');
+      if (picked) picked.classList.add(won ? (bet.side === 'Edge' ? 'res-edge' : 'res-win') : 'res-loss');
+      if (!won) {
+        const truth = flip.edge ? 'Edge' : flip.side;
+        const el = document.querySelector('#side-choices .pick[data-val="' + truth + '"]');
+        if (el) el.classList.add(flip.edge ? 'res-edge' : 'res-win');
+      }
+    } else if (x.key === 'orient') {
+      document.querySelectorAll('#dial .quad').forEach((q) => { q.style.transform = ''; });
+      BETS.orientSel(bet).forEach((dq) => {
+        const q = document.querySelector('#dial .quad[data-quad="' + dq + '"]');
+        if (q && (flip.edge || dq !== flip.quadrant)) q.classList.add('res-loss');
+      });
+      if (!flip.edge) {
+        const hit = document.querySelector('#dial .quad[data-quad="' + flip.quadrant + '"]');
+        if (hit) { hit.classList.remove('res-loss'); hit.classList.add('res-win'); }
+      }
+    } else {
+      $('#lineWrap').classList.add(won ? 'res-win' : 'res-loss');
+      const modeEl = document.querySelector('#spins-choices .pick2.on');
+      if (modeEl) modeEl.classList.add(won ? 'res-win' : 'res-loss');
+      // Guarded on flip.edge: the shared draw NULLS spins on a rim landing, so
+      // reading it here would print "NaN" where the coin's rotation should be.
+      if (!won && !flip.edge) {
+        const el = $('#spinLanded');
+        el.textContent = toRotations(flip.spins).toFixed(1);
+        el.style.visibility = 'visible';
+      }
+    }
+
+    const mcell = x.key === 'side' ? '#m-side' : x.key === 'orient' ? '#m-orient' : '#m-spins';
+    $(mcell).classList.add(won ? (bet.side === 'Edge' && x.key === 'side' ? 'res-edge' : 'res-win') : 'res-loss');
+
+    if (betMode === 'ride') {
+      if (!won && alive) {
+        alive = false;
+        await wait(gap);
+        await countUp(running, 0, d.ms, d.pulse, stake, flip.edge);
+        running = 0;
+      }
+      await wait(tail);
+      continue;
+    }
+
+    await wait(gap);
+    const target = running + delta;
+    await countUp(running, target, d.ms, d.pulse, stake, flip.edge);
+    running = target;
+    await wait(tail);
+  }
+
+  if (betMode === 'ride' && alive) {
+    const target = stake * BETS.rideMult(bet, shownStart);
+    const d = dramaOf(target - running, stake);
+    await countUp(running, target, d.ms, d.pulse, stake, flip.edge);
+    running = target;
+  }
+  return Math.max(0, running);
+}
+
+function clearReveal() {
+  document.querySelectorAll('.res-win,.res-loss,.res-edge')
+    .forEach((e) => e.classList.remove('res-win', 'res-loss', 'res-edge'));
+  const t = $('#stepTotal');
+  if (t) { t.style.visibility = 'hidden'; t.textContent = '0'; t.style.color = ''; }
+  const sl = $('#spinLanded');
+  if (sl) { sl.style.visibility = 'hidden'; sl.textContent = ''; }
+  document.querySelectorAll('.row-amt.amt-hidden').forEach((e) => e.classList.remove('amt-hidden'));
+}
+
+// --- the flip --------------------------------------------------------------
+async function doFlip({ power = 0.5, fromPose = null } = {}) {
+  if (flipping || !canFlip()) return;
+  // try/FINALLY, not try/catch. The lock MUST come off even when the flip dies
+  // half way: without it a single throw anywhere in the reveal left `flipping`
+  // true forever and every later attempt became a silent no-op while the coin
+  // still looked live. The player keeps their money, so the cleaning game will
+  // not offer itself either — a funded account that can never play again.
+  flipping = true;
+  updateFlipLock();
+  try {
+    renderer.clearReading();
+    clearReveal();
+    const outcome = pending;
+    const stake = player.balance;
+    const p = BETS.portions(bet, betMode);
+
+    // THE AUTHORITATIVE NUMBER, decided before anything animates.
+    const returned = BETS.settleReturn(bet, betMode, outcome, stake, shownStart);
+
+    await renderer.play(outcome, { fromPose, power, daringness: 0.5 });
+    const animated = await revealResults(outcome, stake, p);
+    if (Math.abs(animated - returned) > 1) {
+      // Not fatal — the settlement is authoritative and the player is paid it —
+      // but a divergence means the animation and the arithmetic have drifted,
+      // which is exactly how a reveal starts lying about the result.
+      console.error('[coinflip] reveal drifted from the settlement', { animated, returned });
+    }
+
+    spendDay();
+    player = WALLET.settle(player, {
+      stake, returned, flip: outcome,
+      bets: p.map((x) => ({
+        stake: x.w * stake, payoutMultiple: x.mult, kind: x.key,
+        won: BETS.winOf(x, bet, outcome),
+      })),
+    });
+    day = player.history.length;
+    save();
+    renderResult(outcome, stake, player.balance, p);
+    $('#again').style.display = '';
+  } finally {
+    flipping = false;
+    syncMoney(); updateFlipLock();
+  }
+}
+
+function renderResult(flip, sb, eb, p) {
+  const lines = p.map((x) => `${x.key} ${BETS.fmtMult(x.mult)}× [${BETS.winOf(x, bet, flip) ? 'WIN' : 'LOSS'}]`);
+  // Every axis is NULL on a rim landing, so each one is guarded rather than
+  // formatted — `null.toFixed(2)` is a throw, and it would land inside the
+  // flip's try/finally and take the whole result presentation with it.
+  const spin = flip.edge ? '—' : spinLabel(flip.spins);
+  const orient = flip.edge ? '—' : `${flip.orientationDeg.toFixed(2)}° (${flip.quadrant})`;
+  const block = document.createElement('div');
+  block.innerHTML = `<hr><p>shown <b>${flip.startFace}</b> → landed <b>${flip.edge ? 'EDGE' : flip.side}</b>,`
+    + ` spin: <b>${spin}</b>, orientation: <b>${orient}</b></p>`
+    + `<p>${Math.round(sb)} → ${Math.round(eb)} ₿</p><pre>${lines.join('\n')}</pre>`;
+  $('#out').prepend(block);
+}
+
+// --- busker mode -----------------------------------------------------------
+let clean = null; let cleanDown = false; let cleanMask = null; let cleanImg = null;
+
+/**
+ * A fresh dirty coin, seeded off the DAY so a reload cannot reroll the dirt into
+ * something quicker — the seed is the only thing between a scrub and a
+ * re-roll-until-it-is-easy exploit on the game's only money faucet.
+ *
+ * THE STATE MACHINE IS CREATED UNCONDITIONALLY; only the pixels are optional.
+ * `clean` is what pays the player, and a canvas that failed to initialise must
+ * never be able to take the money with it.
+ */
+function startClean() {
+  clean = createClean({ seed: (day * 2654435761 + 12345) | 0 });
+  cleanDown = false; cleanMask = null; cleanImg = null;
+  const g = clean.grid;
+  const m = document.createElement('canvas');
+  const mctx = m && typeof m.getContext === 'function' ? m.getContext('2d') : null;
+  if (mctx && typeof mctx.createImageData === 'function') {
+    m.width = m.height = g;
+    cleanMask = m; cleanImg = mctx.createImageData(g, g);
+  }
+  renderClean();
+}
+function drawCleanCoin(ctx, cx, cy, r) {
+  const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r);
+  g.addColorStop(0, '#e6e7ea'); g.addColorStop(0.55, '#bfc1c7'); g.addColorStop(1, '#8e9199');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = r * 0.055; ctx.strokeStyle = '#7d8089';
+  ctx.beginPath(); ctx.arc(cx, cy, r * 0.965, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#83868f'; ctx.lineWidth = r * 0.02;
+  for (let i = 0; i < 90; i++) {
+    const a = (i / 90) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r * 0.975, cy + Math.sin(a) * r * 0.975);
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.stroke();
+  }
+}
+function renderClean() {
+  if (!clean) return;
+  const res = $('#brokeResult');
+  if (res && !clean.done) { res.textContent = clean.payout + ' ₿'; res.style.color = '#9a9a9a'; }
+  const cv = $('#cleanCoin');
+  if (!cv || typeof cv.getContext !== 'function') return;
+  const ctx = cv.getContext('2d');
+  if (!ctx || !cleanMask || !cleanImg) return;
+  const w = cv.width; const h = cv.height;
+  const cx = w / 2; const cy = h / 2; const r = Math.min(w, h) * 0.44;
+  ctx.clearRect(0, 0, w, h);
+  drawCleanCoin(ctx, cx, cy, r);
+  const g = clean.grid; const d = cleanImg.data;
+  for (let j = 0; j < g; j++) {
+    for (let i = 0; i < g; i++) {
+      const k = j * g + i; const v = clean.dirtAt(i, j);
+      d[k * 4] = 58; d[k * 4 + 1] = 47; d[k * 4 + 2] = 34;
+      d[k * 4 + 3] = Math.round(Math.min(1, v) * 236);
+    }
+  }
+  cleanMask.getContext('2d').putImageData(cleanImg, 0, 0);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(cleanMask, cx - r, cy - r, r * 2, r * 2);
+  ctx.restore();
+}
+function cleanCoords(ev) {
+  const cv = $('#cleanCoin'); const b = cv.getBoundingClientRect();
+  const r = Math.min(b.width, b.height) * 0.44;
+  return [(ev.clientX - (b.left + b.width / 2)) / r, (ev.clientY - (b.top + b.height / 2)) / r];
+}
+function cleanScrub(ev) {
+  if (!clean || !canClean()) return;    // the gate holds in LOGIC
+  const [x, y] = cleanCoords(ev);
+  clean.scrubTo(x, y);
+  renderClean();
+  if (clean.done) cleanPayout();
+}
+
+/**
+ * The clean pays out. It CANNOT pay 0 — the band is enforced inside payoutFor()
+ * — because this is the only way back in from 0 ₿ and a path that pays nothing
+ * is a dead account, not a balance problem.
+ */
+async function cleanPayout() {
+  if (flipping || !clean || !clean.done || !canClean()) return;
+  flipping = true;
+  try {
+    spendDay();                       // cleaning IS the daily flip
+    player = WALLET.settleClean(player, { paid: clean.payout, cleaned: clean.cleaned });
+    day = player.history.length;
+    save();
+    const res = $('#brokeResult');
+    res.textContent = '+' + player.balance; res.style.color = '#1a9e3f';
+  } finally { flipping = false; }
+  await refresh();
+}
+
+$('#cleanCoin').addEventListener('pointerdown', (ev) => {
+  if (!canClean()) return;
+  cleanDown = true;
+  $('#cleanCoin').classList.add('scrubbing');
+  try { $('#cleanCoin').setPointerCapture(ev.pointerId); } catch {}
+  cleanScrub(ev);
+  ev.preventDefault();
+});
+$('#cleanCoin').addEventListener('pointermove', (ev) => {
+  if (!cleanDown) return;
+  cleanScrub(ev); ev.preventDefault();
+});
+const cleanRelease = () => {
+  cleanDown = false;
+  $('#cleanCoin').classList.remove('scrubbing');
+  if (clean) clean.lift();
+};
+$('#cleanCoin').addEventListener('pointerup', cleanRelease);
+$('#cleanCoin').addEventListener('pointercancel', cleanRelease);
+
+// --- arm / refresh ---------------------------------------------------------
+function resetForm() {
+  clearReveal();
+  bet = {}; betMode = 'spread';
+  ['side', 'orient', 'spins'].forEach(unlockChoices);
+  hideAspect('spins'); hideAspect('orient'); hideAspect('spread');
+  $('#spinLine').value = ''; updateDeadSides(NaN); clearDial();
+  updateRail(0); updateFinal();
+}
+
+/** Draw the next outcome and show its start face. ONE draw — flip3d/outcome.js. */
+async function arm() {
+  const seed = params.get('seed') ? `${params.get('seed')}::${day}` : `cf::${Date.now()}::${day}`;
+  pending = await resolveFlip(seed, library);
+  shownStart = pending.startFace;
+  $('#shown').innerHTML = 'shown <b>' + pending.startFace + '</b>';
+  if (library) library.prefetch(pending);
+  await renderer.ready(pending.startFace);
+  $('#again').style.display = 'none';
+  resetForm();
+}
+
+async function refresh() {
+  syncMoney();
+  const broke = !Number.isFinite(player.balance) || player.balance <= 0;
+  $('#brokeScreen').style.display = broke ? 'block' : 'none';
+  $('#form').style.display = broke ? 'none' : 'block';
+  $('#bar').style.display = broke ? 'none' : 'flex';
+  if (renderer.kind === '3d') $('#stage').classList.toggle('hidden', broke);
+  else $('#flatStage').classList.toggle('on', !broke);
+  if (broke) { startClean(); updateBrokeLock(); }
+  else await arm();
+  updateFinal();
+}
+function updateBrokeLock() {
+  const c = $('#cleanCoin');
+  if (c) c.classList.toggle('locked', !canClean());
+}
+
+$('#bankBtn').addEventListener('click', doBank);
+$('#bankInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); doBank(); }
+});
+$('#again').addEventListener('click', async () => {
+  $('#again').style.display = 'none';
+  renderer.clearReading();
+  await refresh();
+});
+
+$('#debugReset').addEventListener('click', async () => {
+  player = WALLET.emptyPlayer(); day = 0; save();
+  $('#out').innerHTML = ''; $('#brokeResult').textContent = '';
+  clean = null; clearReveal();
+  await refresh();
+});
+$('#dbgTimerStart').addEventListener('click', () => { player.nextFlipAt = Date.now() + 60000; save(); tickTimer(); });
+$('#dbgTimerZero').addEventListener('click', () => { player.nextFlipAt = 0; save(); tickTimer(); });
+
+function tickTimer() {
+  $('#timer').textContent = fmtTimer();
+  syncMoney(); updateFlipLock(); updateBrokeLock();
+  // The hard cap can ONLY fire from here: a player who has stopped scrubbing
+  // emits no pointer events, so nothing else would notice the 20 s expire and
+  // they would be stranded at 0 ₿ forever — the exact failure the payout band
+  // exists to make impossible.
+  if (clean && !clean.done && clean.tick()) { renderClean(); cleanPayout(); }
+}
+setInterval(tickTimer, 500);
+
+await refresh();
+tickTimer();
+
+window.COINFLIP = {
+  get player() { return player; }, get bet() { return bet; },
+  get pending() { return pending; }, get renderer() { return renderer; },
+  BETS, WALLET, resolveFlip,
+};
+</script>
+</body>
+</html>
