@@ -61,7 +61,13 @@ function mkEl(sel) {
     },
     hasHandler: (type) => (handlers.get(type) || []).length > 0,
     prepend() {}, appendChild() {}, remove() {}, blur() {}, focus() {},
-    setAttribute() {}, getAttribute: () => null,
+    // removeAttribute was missing, and its absence read as a PAGE bug: clearing
+    // the landed-bearing marker threw "lm.removeAttribute is not a function" and
+    // took the whole clean-and-rearm path down with it. A stub that omits a
+    // standard DOM method does not test less, it reports the wrong thing — so
+    // the gap is filled rather than the page bent around it.
+    setAttribute() {}, getAttribute: () => null, removeAttribute() {},
+    hasAttribute: () => false,
     setPointerCapture() {}, releasePointerCapture() {},
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 300, height: 300, right: 300, bottom: 300 }),
     getContext: () => ctx2d(),

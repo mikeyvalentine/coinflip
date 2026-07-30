@@ -89,9 +89,17 @@ console.log('\n=== (2) round-trip: pixel -> metres -> pixel ===');
     const rect = rectOf(h, 37);   // a non-zero top, so a dropped `rect.top` shows
     for (let i = 0; i <= 400; i++) {
       const y = LIFT.minY + (LIFT.maxY - LIFT.minY) * i / 400;
-      const px = worldYToScreenY(y, rect, READY_SHOT, FOV);
+      // AGAINST HOLD_SHOT, not READY_SHOT. The lift only ever happens while the
+      // coin is HELD, and picking it up switches the camera to HOLD_SHOT — that
+      // is the whole point of the hold framing, and it is what the gesture reads
+      // its band from. Testing the full lift range against the resting close-up
+      // asks where a 150 mm-high coin lands in a shot whose camera sits at 44 mm:
+      // behind the eye, correctly non-finite. It only passed before because the
+      // resting shot happened to be far enough back to keep the impossible state
+      // on screen, and it broke the moment that shot was tightened.
+      const px = worldYToScreenY(y, rect, HOLD_SHOT, FOV);
       ok(Number.isFinite(px), 'worldYToScreenY returned non-finite inside the lift range', { y, h });
-      const back = screenYToWorldY(px, rect, READY_SHOT, FOV);
+      const back = screenYToWorldY(px, rect, HOLD_SHOT, FOV);
       const err = Math.abs(back - y);
       n++;
       if (err > worst) { worst = err; worstAt = { h, y: f4(y), px: f4(px), back: f4(back) }; }
@@ -134,8 +142,12 @@ console.log('\n=== (3) monotone, and total ===');
   console.log(`  ${nasty.length} degenerate inputs: all finite and inside [${f4(LIFT.minY)}, ${f4(LIFT.maxY)}]`);
 
   // The clamp holds at both ends.
-  ok(screenYToWorldY(1e6, rect, READY_SHOT, FOV) === LIFT.minY, 'far below the canvas does not clamp to rest');
-  ok(screenYToWorldY(-1e6, rect, READY_SHOT, FOV) === LIFT.maxY, 'far above the canvas does not clamp to the ceiling');
+  // Against HOLD_SHOT: the clamp is about the LIFT range, and lifting only
+  // happens in the hold framing. In the resting close-up the ceiling sits above
+  // the camera itself, so "far above the canvas" is legitimately behind the eye
+  // and returns the floor — correct behaviour, wrong question.
+  ok(screenYToWorldY(1e6, rect, HOLD_SHOT, FOV) === LIFT.minY, 'far below the canvas does not clamp to rest');
+  ok(screenYToWorldY(-1e6, rect, HOLD_SHOT, FOV) === LIFT.maxY, 'far above the canvas does not clamp to the ceiling');
   console.log('  clamp holds at both ends');
 
   // liftFraction spans exactly 0..1 across the range and is clamped outside it.
@@ -214,11 +226,18 @@ console.log('\n=== (6) the HOLD framing keeps the coin in frame and opens the th
   const rect = rectOf(550);
   const strokeOn = (shot, maxY) =>
     worldYToScreenY(LIFT.minY, rect, shot, FOV) - worldYToScreenY(maxY, rect, shot, FOV);
-  const OLD_MAX_Y = 0.032;            // the ceiling READY framing could afford
-  const before = strokeOn(READY_SHOT, OLD_MAX_Y);
+  // "Before" was strokeOn(READY_SHOT, 0.032) — which RECOMPUTES with today's
+  // READY_SHOT, so it is not a historical baseline at all. Tightening the
+  // resting close-up for a better pre-throw view inflated "before" from ~196 px
+  // to ~298 px and the ratio collapsed, reporting that the hold framing had
+  // stopped opening the throw when nothing about the hold framing had changed.
+  // A baseline that moves with the thing it measures is not a baseline.
+  const OLD_MAX_Y = 0.032;            // the ceiling the old READY framing afforded
+  const OLD_STROKE_PX = 196;          // MEASURED then, frozen now
+  const before = OLD_STROKE_PX;
   const after = strokeOn(HOLD_SHOT, LIFT.maxY);
   console.table([
-    { framing: 'READY (before)', 'ceiling m': OLD_MAX_Y, 'world mm': +((OLD_MAX_Y - LIFT.minY) * 1000).toFixed(1), 'stroke px': +before.toFixed(0) },
+    { framing: 'READY (frozen baseline)', 'ceiling m': OLD_MAX_Y, 'world mm': +((OLD_MAX_Y - LIFT.minY) * 1000).toFixed(1), 'stroke px': before },
     { framing: 'HOLD (now)', 'ceiling m': LIFT.maxY, 'world mm': +((LIFT.maxY - LIFT.minY) * 1000).toFixed(1), 'stroke px': +after.toFixed(0) },
   ]);
   ok(after > before * 1.6, 'the hold framing did not meaningfully open the throw',

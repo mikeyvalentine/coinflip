@@ -74,7 +74,12 @@ export const SCENE_FOV_DEG = 45;
  * space rather than the size of the subject. That is the whole point of pairing
  * a wider lens with a closer camera.
  */
-export const READY_SHOT = { target: [0, 0.004, 0], distance: 0.10, elevDeg: 34, azimuthDeg: 0 };
+// Closer than the throwing framing on purpose. Before the pick-up the coin is
+// the ONLY thing on screen worth looking at — it is what you are about to grab,
+// and the face it is showing is the whole reason the start face needs no caption
+// underneath. HOLD_SHOT pulls back to 0.22 the moment you touch it, which is
+// what opens the throwing space; this is the resting close-up it comes from.
+export const READY_SHOT = { target: [0, 0.004, 0], distance: 0.072, elevDeg: 34, azimuthDeg: 0 };
 
 /**
  * The framing while the coin is HELD. Picking it up drops the table out of the

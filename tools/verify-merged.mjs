@@ -44,7 +44,7 @@ globalThis.__QA = {
   setBet(v){ bet = v; }, setMode(v){ betMode = v; }, setPending(v){ pending = v; },
   setStart(v){ shownStart = v; }, setNextFlipAt(t){ player.nextFlipAt = t; },
   doFlip, doBank, canFlip, canBank, canClean, cleanPayout, refresh, arm,
-  updateFinal, revealResults, renderResult, spendDay, save,
+  updateFinal, revealResults, spendDay, save,
   DAY_MS,
 };`;
 
@@ -91,10 +91,21 @@ console.log('\n=== (2) THE REVEAL\'S CONTAINING BLOCK IS INTACT ===');
   const html = await fs.readFile(path.join(ROOT, 'coinflip.html'), 'utf8');
   const markup = html.slice(0, html.indexOf('<script type="module">'));
 
+  // Delimit #form by BALANCING ITS OWN TAGS, not by looking for whatever
+  // happened to sit after it. This used to end the region at `<div id="out">` —
+  // the per-flip history block — so deleting that block made the check report
+  // "could not find #form" on markup where #form is plainly present. A test
+  // anchored to an unrelated sibling breaks whenever the sibling moves, and the
+  // failure blames the wrong element.
   const formStart = markup.indexOf('<div id="form"');
-  const formEnd = markup.indexOf('<div id="out">');
-  ok(formStart >= 0 && formEnd > formStart, 'could not find #form in the markup');
+  ok(formStart >= 0, 'could not find #form in the markup');
+  let depth = 0; let formEnd = markup.length;
+  for (const m of markup.slice(formStart).matchAll(/<div\b|<\/div>/g)) {
+    depth += m[0] === '</div>' ? -1 : 1;
+    if (depth === 0) { formEnd = formStart + m.index + m[0].length; break; }
+  }
   const form = markup.slice(formStart, formEnd);
+  ok(form.length > 200 && depth === 0, 'could not balance #form’s tags', { len: form.length });
 
   ok(form.includes('id="stepTotal"'), '#stepTotal is not inside #form — the offsets would be meaningless');
   ok(/#form\s*\{[^}]*position:\s*relative/.test(html), '#form is not the containing block');
@@ -284,10 +295,27 @@ console.log('\n=== (6) AN EDGE SWEEPS EVERYTHING, AND PAYS 499x WHEN CALLED ==='
   // and the page can PRESENT one without throwing on the nulls
   const g = await fresh();
   g.setBet({ side: 'Heads', orientation: ['NE'] });
-  let threw = null;
-  try { g.renderResult(edge, 100, 0, BETS.portions({ side: 'Heads', orientation: ['NE'] }, 'spread')); }
-  catch (e) { threw = String(e && e.message); }
-  ok(!threw, 'presenting a rim landing threw on a nulled axis', { threw });
+  // The per-flip history block that used to render this is gone — it was a debug
+  // readout that survived into the game, restating what the coin, the dial and
+  // the reveal had just shown. What still MUST hold is that a rim landing, whose
+  // spins/quadrant/orientationDeg are all null, survives the settlement path
+  // without a `null.toFixed()` throw — so drive the reveal itself rather than a
+  // presenter that no longer exists.
+  // ARGUMENT ORDER MATTERS AND I GOT IT WRONG FIRST. settleReturn is
+  // (bet, betMode, flip, stake, startFace); my first version passed the rim
+  // outcome as `bet` and 100 as `betMode`, so it exercised nothing, threw
+  // nothing, and reported green. A test that passes because it never reached
+  // the code is indistinguishable from one that passes because the code works.
+  const rimBet = { side: 'Heads', orientation: ['NE'], spins: { line: 10, mode: 'exact' } };
+  let threw = null; let paid = null;
+  try {
+    paid = BETS.settleReturn(rimBet, 'spread', edge, 100, 'Heads');
+    for (const x of BETS.portions(rimBet, 'spread')) BETS.winOf(x, rimBet, edge);
+  } catch (e) { threw = String(e && e.message); }
+  ok(!threw, 'a rim landing throws on a nulled axis somewhere in settlement', { threw });
+  // and the Edge SWEEPS: a board that did not call Edge loses everything on one
+  ok(paid === 0, 'a rim landing did not sweep the board', { paid });
+  console.log(`  a rim landing settles a non-Edge board to ${paid} — swept, and no null threw`);
   console.log('  the rim result renders with every nulled axis guarded');
 }
 
@@ -376,7 +404,40 @@ console.log('\n=== (8) THE DAILY GATE IS REAL, AND PERSISTS ===');
   const cleanSeg = cut('async function cleanPayout', 900);
   ok(flipSeg.length > 0 && cleanSeg.length > 0, 'could not locate the two turn-spending paths');
   ok(flipSeg.includes('spendDay()'), 'a flip does not spend the day');
-  ok(cleanSeg.includes('spendDay()'), 'a clean does not spend the day — busting would be free');
+  // CLEANING MUST *NOT* SPEND THE DAY, and the original assertion here had it
+  // backwards. It was inherited from the Broke Flip, where the recovery really
+  // was your flip — a heads-or-tails call. Cleaning is a chore that earns a
+  // stake, and charging the day for it meant a NEW PLAYER COULD NEVER FLIP AT
+  // ALL on day one: open the game at 0, clean, coin locked for 24 hours.
+  //
+  // Its stated fear — "busting would be free" — does not hold, and that is
+  // asserted below rather than argued: cleaning needs a wallet at 0 AND a clear
+  // timer, so after a bust the flip's own 24 hours still gate it.
+  ok(!cleanSeg.includes('spendDay()'),
+    'cleaning spends the day again — a new player cannot flip on their first day');
+
+  {
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const running = (p, t) => t < p.nextFlipAt;
+    // fresh player: may clean, and may then flip the same day
+    const fresh = { balance: 0, bank: 0, nextFlipAt: 0, history: [] };
+    ok(WALLET.canClean(fresh, { timerRunning: running(fresh, now), inFlight: false }),
+      'a new player cannot even clean');
+    const funded = { ...fresh, balance: 50 };
+    ok(WALLET.canFlip(funded, { timerRunning: false, inFlight: false, hasBet: true, rideDead: false }),
+      'a new player still cannot flip after cleaning — the day-one dead end is back');
+    // and the faucet cannot be farmed: funded blocks it, and after a bust the
+    // flip's timer blocks it
+    ok(!WALLET.canClean(funded, { timerRunning: false, inFlight: false }),
+      'a funded player can clean — the faucet is farmable');
+    const bustedToday = { ...fresh, balance: 0, nextFlipAt: now + DAY };
+    ok(!WALLET.canClean(bustedToday, { timerRunning: running(bustedToday, now), inFlight: false }),
+      'a player who busted can clean again the same day — busting IS free');
+    ok(WALLET.canClean(bustedToday, { timerRunning: running(bustedToday, now + DAY + 1), inFlight: false }),
+      'the recovery never reopens — the player is stranded');
+    console.log('  one flip a day, one recovery once that flip is spent, and no way to farm it');
+  }
   ok(/nextFlipAt/.test(body) && /savePlayer|save\(\)/.test(body), 'the cooldown is not persisted');
   console.log('  a flip and a clean both spend the day, and nextFlipAt is saved');
 

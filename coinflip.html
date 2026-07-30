@@ -65,14 +65,25 @@
   .coin .back { transform:rotateY(180deg); }
 
   #bar { display:flex; justify-content:space-between; align-items:baseline; gap:16px; margin-bottom:18px; }
-  #shown { color:#9a9a9a; }
-  #shown b { color:#111; font-weight:700; }
   #spinCounter { font-weight:700; font-variant-numeric:tabular-nums; }
   #again { font:inherit; color:#9a9a9a; background:none; border:1px solid #ddd; padding:4px 10px; cursor:pointer; }
   #again:hover { color:black; border-color:black; }
 
   #form { display:block; position:relative; }
-  #grid { display:grid; grid-template-columns:auto 1fr auto; row-gap:22px; column-gap:16px; align-items:start; }
+  /* minmax(0,...) on the CONTENT column, not 1fr alone.
+     A grid track's default min-width is auto, i.e. "never smaller than my
+     content" — so at a large system font the content column refuses to shrink,
+     the row grows past the viewport, and the MULTIPLIER column is pushed off
+     the right edge. It renders; you just cannot see it. Reported on a phone
+     with iOS large text, where 2x / 2x / 1.1x sat entirely off-screen.
+     minmax(0,1fr) lets the track shrink below its content so the last column
+     stays on screen, and the content wraps instead of the row overflowing. */
+  #grid { display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+          row-gap:22px; column-gap:16px; align-items:start; }
+  /* Belt and braces: the body must never scroll sideways. If some future row
+     does overflow, it should be visibly clipped and fixed, not silently push
+     the whole page wider than the screen. */
+  body { overflow-x:hidden; }
   .dot { width:14px; height:14px; border-radius:50%; border:2px solid #ccc; background:#ccc;
          padding:0; margin-top:4px; transition:transform .1s, background .15s, border-color .15s;
          cursor:default; align-self:start; }
@@ -89,7 +100,7 @@
   .grid-divider { grid-column:1 / -1; border-top:1px solid #ccc; margin-top:6px; }
   .total-mult { color:black; }
   .total-content { font-weight:700; }
-  .field-row { display:grid; grid-template-columns:var(--field-x) auto; align-items:start; }
+  .field-row { display:grid; grid-template-columns:minmax(0,var(--field-x)) auto; align-items:start; }
   .row-amt { color:#9a9a9a; white-space:nowrap; font-variant-numeric:tabular-nums; margin-top:4px; }
   .total-content .row-amt { color:black; margin-top:0; }
 
@@ -138,7 +149,7 @@
   #lineWrap.res-loss input { color:#d12d2d; border-color:#d12d2d; }
   #spinLanded { visibility:hidden; min-width:46px; color:#1a9e3f; }
 
-  .mode-row { display:grid; grid-template-columns:var(--field-x) auto; align-items:baseline; }
+  .mode-row { display:grid; grid-template-columns:minmax(0,var(--field-x)) auto; align-items:baseline; }
   .opt.mode { font-weight:700; letter-spacing:.04em; }
   .mode-stat { color:#9a9a9a; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .aspect-cell.void { opacity:.25; pointer-events:none; }
@@ -152,7 +163,6 @@
   #bankBtn:hover { color:black; }
   #bankCtl.off { opacity:.35; pointer-events:none; }
 
-  #out { margin-top:14px; }
   #status { color:#9a9a9a; margin-top:10px; font-size:14px; }
   #debugBar { margin-top:50px; padding-top:16px; border-top:1px solid #eee; }
   #debugBar button { font:inherit; color:#9a9a9a; background:none; border:1px solid #ddd;
@@ -176,7 +186,6 @@
     #a-spread .mode-row { grid-template-columns:auto 1fr; column-gap:14px; }
     #stepTotal { font-size:19px; line-height:21px; }
     #debugBar { display:flex; flex-wrap:wrap; gap:8px; }
-    #out { overflow-x:auto; }
   }
   @media (max-width: 400px) {
     body { padding:14px 14px 36px; --field-x:150px; }
@@ -190,14 +199,20 @@
 <body>
 <div id="wrap">
 
+<!-- The labels are gone on purpose. "banked" in front of a number, and "Next
+     flip in" in front of a clock, are both captions for things whose shape
+     already says what they are — and the standing rule on this project is no
+     unrequested explanatory copy. The wallet is the big number; the banked
+     figure sits under it next to the control that moves money there; the timer
+     sits alone in the corner where a clock belongs. -->
 <div id="topbar">
   <div id="money">
     <div><span id="bal">0</span> ₿</div>
-    <div id="bankLine">banked <span id="bankAmt">0</span> ₿
+    <div id="bankLine"><span id="bankAmt">0</span> ₿
       <span id="bankCtl"><input type="number" id="bankInput" min="1" step="1"><span id="bankBtn">bank</span></span>
     </div>
   </div>
-  <div id="timerBar">Next flip in <b id="timer">00</b></div>
+  <div id="timerBar"><b id="timer">00</b></div>
 </div>
 
 <!-- the flip. Sibling of #form, never an ancestor of a row — see the CSS note. -->
@@ -207,7 +222,6 @@
 <div id="flatStage"><div id="coinVis"></div></div>
 
 <div id="bar">
-  <div id="shown"></div>
   <div id="spinCounter">spin: 0.0</div>
   <button id="again" style="display:none">reset</button>
 </div>
@@ -260,6 +274,11 @@
             <g data-arrow="SW" transform="translate(48.2,111.8) rotate(225)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
             <g data-arrow="NW" transform="translate(48.2,48.2) rotate(315)"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
             <g id="dial-merged" style="display:none"><path d="M0,9 L0,-9 M-5,-4 L0,-9 L5,-4"/></g>
+            <!-- where the coin actually settled: a small filled triangle on the
+                 rim at the exact bearing, apex pointing in at the dial -->
+            <g id="dialLanded" style="visibility:hidden" fill="#ffc300" stroke="none">
+              <path d="M-6,-11 L6,-11 L0,0 Z"/>
+            </g>
           </g>
         </svg>
       </div>
@@ -312,7 +331,6 @@
   </div>
 </div>
 
-<div id="out"></div>
 <div id="status">loading…</div>
 
 <div id="debugBar">
@@ -941,14 +959,31 @@ async function revealResults(flip, stake, p) {
         if (el) el.classList.add(flip.edge ? 'res-edge' : 'res-win');
       }
     } else if (x.key === 'orient') {
-      document.querySelectorAll('#dial .quad').forEach((q) => { q.style.transform = ''; });
-      BETS.orientSel(bet).forEach((dq) => {
-        const q = document.querySelector('#dial .quad[data-quad="' + dq + '"]');
-        if (q && (flip.edge || dq !== flip.quadrant)) q.classList.add('res-loss');
+      // NO QUADRANT FLOODING. Painting the winning wedge green and the losing
+      // ones red answers a coarser question than the coin actually answered: the
+      // coin settled at a precise bearing, and a filled 90-degree sector says
+      // only which bucket that fell in. The marker sits at the EXACT angle, so
+      // it shows both at once — which wedge, and where inside it — and it does
+      // that without covering the dial the player is reading it against.
+      //
+      // Win and loss are still legible: the marker's position against the
+      // quadrants you painted IS the result, and the running total in the
+      // amount column carries the money.
+      document.querySelectorAll('#dial .quad').forEach((q) => {
+        q.style.transform = '';
+        q.classList.remove('res-win', 'res-loss');
       });
-      if (!flip.edge) {
-        const hit = document.querySelector('#dial .quad[data-quad="' + flip.quadrant + '"]');
-        if (hit) { hit.classList.remove('res-loss'); hit.classList.add('res-win'); }
+      const mark = $('#dialLanded');
+      if (mark && !flip.edge) {
+        // same convention as the in-scene dial: bearing measured CLOCKWISE FROM
+        // NORTH, screen-up is North, and the triangle points inward at the rim
+        const t = (flip.orientationDeg % 360) * Math.PI / 180;
+        const R = 70;                       // the dial's own radius, in its units
+        const cx = 80 + Math.sin(t) * R;
+        const cy = 80 - Math.cos(t) * R;
+        mark.setAttribute('transform',
+          `translate(${cx.toFixed(2)} ${cy.toFixed(2)}) rotate(${(flip.orientationDeg).toFixed(2)})`);
+        mark.style.visibility = 'visible';
       }
     } else {
       $('#lineWrap').classList.add(won ? 'res-win' : 'res-loss');
@@ -994,6 +1029,9 @@ async function revealResults(flip, stake, p) {
 }
 
 function clearReveal() {
+  // and the landed-bearing marker, or last flip's answer sits on this flip's board
+  const lm = $('#dialLanded');
+  if (lm) { lm.style.visibility = 'hidden'; lm.removeAttribute('transform'); }
   document.querySelectorAll('.res-win,.res-loss,.res-edge')
     .forEach((e) => e.classList.remove('res-win', 'res-loss', 'res-edge'));
   const t = $('#stepTotal');
@@ -1042,7 +1080,6 @@ async function doFlip({ power = 0.5, fromPose = null } = {}) {
     });
     day = player.history.length;
     save();
-    renderResult(outcome, stake, player.balance, p);
     $('#again').style.display = '';
   } finally {
     flipping = false;
@@ -1050,19 +1087,12 @@ async function doFlip({ power = 0.5, fromPose = null } = {}) {
   }
 }
 
-function renderResult(flip, sb, eb, p) {
-  const lines = p.map((x) => `${x.key} ${BETS.fmtMult(x.mult)}× [${BETS.winOf(x, bet, flip) ? 'WIN' : 'LOSS'}]`);
-  // Every axis is NULL on a rim landing, so each one is guarded rather than
-  // formatted — `null.toFixed(2)` is a throw, and it would land inside the
-  // flip's try/finally and take the whole result presentation with it.
-  const spin = flip.edge ? '—' : spinLabel(flip.spins);
-  const orient = flip.edge ? '—' : `${flip.orientationDeg.toFixed(2)}° (${flip.quadrant})`;
-  const block = document.createElement('div');
-  block.innerHTML = `<hr><p>shown <b>${flip.startFace}</b> → landed <b>${flip.edge ? 'EDGE' : flip.side}</b>,`
-    + ` spin: <b>${spin}</b>, orientation: <b>${orient}</b></p>`
-    + `<p>${Math.round(sb)} → ${Math.round(eb)} ₿</p><pre>${lines.join('\n')}</pre>`;
-  $('#out').prepend(block);
-}
+// The per-flip history block that used to live under the board is GONE. It was
+// a debug readout that survived into the game: a growing stack of "shown Heads
+// -> landed Tails, spin 13.5, orientation 25.34" with a <pre> of per-line
+// results. The coin, the dial and the staged reveal already say all of it, at
+// the moment it matters, and the share card carries the summary afterwards — so
+// the block was a third telling of a story the player had just watched.
 
 // --- busker mode -----------------------------------------------------------
 let clean = null; let cleanDown = false; let cleanMask = null; let cleanImg = null;
@@ -1152,7 +1182,17 @@ async function cleanPayout() {
   if (flipping || !clean || !clean.done || !canClean()) return;
   flipping = true;
   try {
-    spendDay();                       // cleaning IS the daily flip
+    // CLEANING DOES NOT SPEND THE DAY. It used to — inherited from the Broke
+    // Flip, where the recovery genuinely WAS your flip: a heads-or-tails call.
+    // Cleaning is not a flip, it is a chore to earn a stake, and charging the
+    // day for it means a brand new player can never flip at all on day one:
+    // they open the game at 0, must clean, and the coin locks for 24 hours.
+    // Same every time anyone busts.
+    //
+    // Nothing to farm here. Cleaning requires a wallet at 0 (wallet.js#canClean)
+    // and pays 40-60, so you cannot clean twice in a row — and the only route
+    // back to 0 is a flip, which DOES spend the day. So the shape is: one flip a
+    // day, plus one recovery when you need it.
     player = WALLET.settleClean(player, { paid: clean.payout, cleaned: clean.cleaned });
     day = player.history.length;
     save();
@@ -1197,7 +1237,6 @@ async function arm() {
   const seed = params.get('seed') ? `${params.get('seed')}::${day}` : `cf::${Date.now()}::${day}`;
   pending = await resolveFlip(seed, library);
   shownStart = pending.startFace;
-  $('#shown').innerHTML = 'shown <b>' + pending.startFace + '</b>';
   if (library) library.prefetch(pending);
   await renderer.ready(pending.startFace);
   $('#again').style.display = 'none';
@@ -1232,8 +1271,7 @@ $('#again').addEventListener('click', async () => {
 });
 
 $('#debugReset').addEventListener('click', async () => {
-  player = WALLET.emptyPlayer(); day = 0; save();
-  $('#out').innerHTML = ''; $('#brokeResult').textContent = '';
+  player = WALLET.emptyPlayer(); day = 0; save(); $('#brokeResult').textContent = '';
   clean = null; clearReveal();
   await refresh();
 });
