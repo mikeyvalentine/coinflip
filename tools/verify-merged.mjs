@@ -121,6 +121,35 @@ console.log('\n=== (3) THE HEADLINE: the merged page uses the SHARED draw ===');
 
   ok(/import\s*\{[^}]*resolveFlip[^}]*\}\s*from\s*'\.\/flip3d\/outcome\.js'/.test(body),
     'the merged page does not import the shared draw');
+
+  // AND IT MUST ACTUALLY USE IT. The import being present proves nothing — the
+  // call site can be swapped for a local expression and the import left sitting
+  // there unused. Mutation-tested: replacing the call with an inline arrow that
+  // returns a fixed outcome passed the structural check above cleanly, which is
+  // precisely the drift this section is named after.
+  //
+  // So compare BEHAVIOUR. Every outcome the page produces must equal what
+  // flip3d/outcome.js produces for the same seed, field for field. Any drift of
+  // any shape fails, not just the one shape someone thought to grep for.
+  {
+    // Match any awaited call whose first argument is the seed, whatever the seed
+    // expression is called. Pinning it to one spelling is how the structural
+    // check above failed in the first place.
+    // The first version of this line ended (?:seed|nextSeed) followed by a word-
+    // boundary escape, and that escape arrived here as a literal BACKSPACE BYTE
+    // (0x08) rather than a boundary — so the pattern could never match and the
+    // section reported "no seeded draw call found" on a page that plainly has
+    // one. Third time today an escape has quietly turned a check into one that
+    // cannot fire. The character class below does the same job and survives
+    // being written by a tool.
+    const calls = [...body.matchAll(/=\s*await\s+([A-Za-z_$][\w$]*)\s*\(\s*(?:seed|nextSeed)[\s,)]/g)]
+      .map((m) => m[1]);
+    ok(calls.length > 0, 'no seeded draw call found in the merged page at all');
+    ok(calls.every((fn) => fn === 'resolveFlip'),
+      'the merged page draws its outcome from something other than the shared resolveFlip',
+      { calls: [...new Set(calls)] });
+    console.log(`  the seeded draw is called through: ${[...new Set(calls)].join(', ')}`);
+  }
   ok(/from\s*'\.\/game\/bets\.js'/.test(body), 'the merged page does not import the shared pricing');
 
   // A COPY is the failure mode, not a missing import. The preview declares its
